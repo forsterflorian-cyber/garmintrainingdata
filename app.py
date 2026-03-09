@@ -1,332 +1,27 @@
-from flask import Flask, jsonify, render_template_string
-import json
-from pathlib import Path
-from datetime import datetime, timedelta
-from auth import requires_auth
-from supabase import create_client
+from __future__ import annotations
+
 import os
+from datetime import date, timedelta
+from typing import Any, Dict, List, Optional
+
+from flask import Flask, jsonify, render_template_string, request
+from supabase import create_client
+
+from auth import requires_auth
+from garmin_hybrid_report_v62_supabase_ready import (
+    ActivitySummary,
+    build_ai_prompt as report_build_ai_prompt,
+    load_client,
+    main_logic_for_day,
+    get_recent_activities,
+)
 
 supabase = create_client(
     os.getenv("SUPABASE_URL"),
-    os.getenv("SUPABASE_KEY")
+    os.getenv("SUPABASE_KEY"),
 )
 
 app = Flask(__name__)
-
-HISTORY_FILE = Path("training_history.json")
-
-
-def load_history():
-    if not HISTORY_FILE.exists():
-        return {"days": {}}
-    try:
-        return json.loads(HISTORY_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        return {"days": {}}
-
-
-def get_day_payload(history, day_str):
-    return history.get("days", {}).get(day_str, {})
-
-
-def get_day_load(history, day_str):
-    summary = get_day_payload(history, day_str).get("summary", {})
-    val = summary.get("training_load_sum")
-    return float(val) if isinstance(val, (int, float)) else 0.0
-
-
-def rolling_load(history, end_day_str, window_days):
-    end_day = datetime.strptime(end_day_str, "%Y-%m-%d").date()
-    total = 0.0
-    for i in range(window_days):
-        d = (end_day - timedelta(days=i)).isoformat()
-        total += get_day_load(history, d)
-    return round(total, 1)
-
-
-def readiness_score(morning):
-    if not morning:
-        return None
-
-    score = 50.0
-
-    hrv = morning.get("hrv")
-    if isinstance(hrv, (int, float)):
-        score += (float(hrv) - 35.0) * 0.8
-
-    resting_hr = morning.get("resting_hr")
-    if isinstance(resting_hr, (int, float)):
-        score -= (float(resting_hr) - 50.0) * 0.5
-
-    sleep_h = morning.get("sleep_h")
-    if isinstance(sleep_h, (int, float)):
-        score += (float(sleep_h) - 7.0) * 2.0
-
-    respiration = morning.get("respiration")
-    if isinstance(respiration, (int, float)):
-        score -= max(0.0, float(respiration) - 14.0) * 1.5
-
-    score = int(max(1, min(99, round(score))))
-    return score
-
-
-def ratio_label(ratio):
-    if ratio is None:
-        return "keine Daten"
-    if ratio < 0.8:
-        return "unter Soll"
-    if ratio <= 1.3:
-        return "im Zielbereich"
-    if ratio <= 1.5:
-        return "erhöht"
-    return "kritisch hoch"
-
-
-def recommendation(score, ratio, mode="hybrid"):
-    if score is None:
-        return "Training nach Gefühl"
-    if ratio is not None and ratio > 1.5:
-        return "Belastung zu hoch – nur locker / Mobility"
-
-    if mode == "run":
-        if score < 40:
-            return "Locker laufen"
-        if score < 65:
-            return "Moderater Lauf"
-        if score < 80:
-            return "Qualitätseinheit möglich"
-        return "Harter Lauf möglich"
-
-    if mode == "bike":
-        if score < 40:
-            return "Locker rollen"
-        if score < 65:
-            return "Moderate Radeinheit"
-        if score < 80:
-            return "Qualitätseinheit Rad möglich"
-        return "Harter Radtag möglich"
-
-    if mode == "strength":
-        if score < 40:
-            return "Nur Mobility"
-        if score < 60:
-            return "Moderates Krafttraining"
-        if score < 80:
-            return "Schweres Krafttraining möglich"
-        return "Maximales Krafttraining möglich"
-
-    if score < 40:
-        return "Erholung oder Mobility"
-    if score < 60:
-        return "Moderater Trainingstag"
-    if score < 80:
-        return "Qualität möglich"
-    return "Harter Qualitätstag möglich"
-
-
-def suggested_units(score, ratio, mode="hybrid"):
-    if score is None:
-        return [
-            "Datenlage zu dünn: 30-45 min locker nach Gefühl",
-            "Optional 10-15 min Mobility",
-        ]
-
-    if ratio is not None and ratio > 1.5:
-        return [
-            "30-45 min sehr locker in Z1",
-            "oder 20-30 min Mobility / Spazieren",
-            "keine harte Qualität, kein schweres Krafttraining",
-        ]
-
-    if mode == "run":
-        if score < 40:
-            return [
-                "30-40 min locker laufen oder gehen",
-                "optional 6 x 20 s lockere Steigerungen nur wenn Beine gut",
-            ]
-        if score < 65:
-            return [
-                "45-60 min lockerer bis moderater Dauerlauf",
-                "alternativ 30-45 min locker + 6 x 20 s Steigerungen",
-            ]
-        if score < 80:
-            return [
-                "Qualität Lauf: 6 x 3 min zügig mit 2 min locker",
-                "alternativ 4 x 5 min an Schwelle mit 2-3 min locker",
-            ]
-        return [
-            "Harter Lauf: 5 x 4 min hart mit 3 min locker",
-            "alternativ 8 x 400 m zügig mit lockerer Trabpause",
-        ]
-
-    if mode == "bike":
-        if score < 40:
-            return [
-                "45-60 min sehr locker rollen in Z1/Z2",
-                "hohe Kadenz, keine Intervalle",
-            ]
-        if score < 65:
-            return [
-                "60-90 min locker bis moderat in Z2",
-                "alternativ 3 x 8 min Sweet Spot kontrolliert",
-            ]
-        if score < 80:
-            return [
-                "Qualität Rad: 4 x 8 min zügig mit 4 min locker",
-                "alternativ 5 x 5 min hart mit 3 min locker",
-            ]
-        return [
-            "Harter Radtag: 6 x 4 min VO2 mit 4 min locker",
-            "alternativ 3 x 12 min Schwelle mit 6 min locker",
-        ]
-
-    if mode == "strength":
-        if score < 40:
-            return [
-                "Nur Mobility, Technik oder sehr leichte Maschinenrunde",
-                "kein schweres Beintraining",
-            ]
-        if score < 60:
-            return [
-                "Moderates Krafttraining Ganzkörper, 2-3 Sätze",
-                "1-3 Wiederholungen im Tank lassen",
-            ]
-        if score < 80:
-            return [
-                "Schweres Krafttraining möglich, Hauptlifts fokussieren",
-                "z. B. 3-5 Sätze Grundübungen, moderates Volumen",
-            ]
-        return [
-            "Schwerer Krafttag gut vertretbar",
-            "z. B. Hauptübungen schwer + 1-2 Zusatzübungen",
-        ]
-
-    # hybrid = run + bike + strength
-    if score < 40:
-        return [
-            "Option 1: 30-40 min locker Run oder Bike",
-            "Option 2: 20-30 min Mobility / Stretching",
-            "Option 3: nur leichtes Krafttraining ohne schwere Sätze",
-        ]
-    if score < 60:
-        return [
-            "Run: 45-60 min locker bis moderat",
-            "Bike: 60-90 min locker Z2",
-            "Strength: normale eGym-Runde / moderates Ganzkörpertraining",
-        ]
-    if score < 80:
-        return [
-            "Run: 6 x 3 min zügig oder 4 x 5 min Schwelle",
-            "Bike: 4 x 8 min zügig oder 5 x 5 min hart",
-            "Strength: schweres Krafttraining möglich, aber nicht maximal",
-        ]
-    return [
-        "Run: harter Qualitätstag möglich",
-        "Bike: harter Intervalltag möglich",
-        "Strength: schwerer Krafttag gut vertretbar",
-    ]
-
-
-def build_series(history):
-    days = sorted(history.get("days", {}).keys())
-    series = []
-
-    for day in days:
-        payload = history["days"].get(day, {})
-        morning = payload.get("morning") or {}
-        summary = payload.get("summary") or {}
-
-        load7 = rolling_load(history, day, 7)
-        load28 = rolling_load(history, day, 28)
-        ratio = round((load7 / 7.0) / (load28 / 28.0), 2) if load28 > 0 else None
-        readiness = readiness_score(morning)
-
-        series.append({
-            "date": day,
-            "readiness": readiness,
-            "load_day": summary.get("training_load_sum") or 0,
-            "load_7d": load7,
-            "load_28d": load28,
-            "ratio": ratio,
-            "ratio_label": ratio_label(ratio),
-            "resting_hr": morning.get("resting_hr"),
-            "hrv": morning.get("hrv"),
-            "respiration": morning.get("respiration"),
-            "sleep_h": morning.get("sleep_h"),
-            "spo2": morning.get("pulse_ox"),
-            "recommendation_hybrid": recommendation(readiness, ratio, "hybrid"),
-            "recommendation_run": recommendation(readiness, ratio, "run"),
-            "recommendation_bike": recommendation(readiness, ratio, "bike"),
-            "recommendation_strength": recommendation(readiness, ratio, "strength"),
-            "units_hybrid": suggested_units(readiness, ratio, "hybrid"),
-            "units_run": suggested_units(readiness, ratio, "run"),
-            "units_bike": suggested_units(readiness, ratio, "bike"),
-            "units_strength": suggested_units(readiness, ratio, "strength"),
-        })
-
-    return series
-
-
-def format_num(v):
-    if isinstance(v, float):
-        return f"{v:.1f}"
-    return str(v) if v is not None else "-"
-
-
-def build_ai_prompt(latest, mode="hybrid"):
-    if not latest:
-        return "Keine Daten verfügbar."
-
-    if mode == "run":
-        target = "Lauftraining"
-        mode_rec = latest.get("recommendation_run")
-    elif mode == "bike":
-        target = "Radtraining"
-        mode_rec = latest.get("recommendation_bike")
-    elif mode == "strength":
-        target = "Krafttraining"
-        mode_rec = latest.get("recommendation_strength")
-    else:
-        target = "Hybridtraining aus Run, Bike und Strength"
-        mode_rec = latest.get("recommendation_hybrid")
-
-    prompt = f"""Du bist mein nüchterner Trainingsberater. Beurteile nur anhand der folgenden Garmin-Daten, ob morgen eher Erholung, moderates Training oder ein Qualitätstag sinnvoll ist.
-
-Regeln:
-- Antworte knapp und konkret.
-- Keine Motivation, kein Coaching-Ton, keine medizinischen Aussagen.
-- Bevorzuge konservative Entscheidungen, wenn Last oder Tagesform grenzwertig sind.
-- Gib am Ende genau diese Punkte aus:
-  1. Gesamturteil
-  2. Empfohlene Einheit morgen
-  3. Was ich vermeiden sollte
-  4. Begründung in 3 kurzen Punkten
-
-Daten:
-Datum: {latest.get("date")}
-Modus: {mode}
-Zielbereich: {target}
-
-Readiness: {format_num(latest.get("readiness"))}/99
-Ruhepuls: {format_num(latest.get("resting_hr"))}
-HRV: {format_num(latest.get("hrv"))}
-Atmung: {format_num(latest.get("respiration"))}
-SpO2: {format_num(latest.get("spo2"))}
-Schlaf: {format_num(latest.get("sleep_h"))} h
-
-Tages-Load heute: {format_num(latest.get("load_day"))}
-7d Load: {format_num(latest.get("load_7d"))}
-28d Load: {format_num(latest.get("load_28d"))}
-7d/28d Ratio: {format_num(latest.get("ratio"))} ({latest.get("ratio_label")})
-
-Interne Basisausgabe meines Dashboards:
-- Hybrid: {latest.get("recommendation_hybrid")}
-- Run: {latest.get("recommendation_run")}
-- Bike: {latest.get("recommendation_bike")}
-- Strength: {latest.get("recommendation_strength")}
-
-Bitte gib eine konkrete Empfehlung für morgen für {target}. Falls die Daten eher gegen maximale Intensität sprechen, sage das klar."""
-    return prompt
 
 
 HTML = """
@@ -795,76 +490,137 @@ fetch("/api/dashboard")
 """
 
 
+def _mode_or_default(value: Optional[str]) -> str:
+    return value if value in {"hybrid", "run", "bike", "strength"} else "hybrid"
+
+
+def _fetch_rows(limit: int = 120) -> List[Dict[str, Any]]:
+    res = (
+        supabase.table("training_days")
+        .select("date,data")
+        .order("date", desc=False)
+        .limit(limit)
+        .execute()
+    )
+    return res.data or []
+
+
+def _history_from_rows(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    history: Dict[str, Any] = {"days": {}}
+    for row in rows:
+        payload = row.get("data") or {}
+        day = payload.get("date") or row.get("date")
+        if not day:
+            continue
+        history["days"][day] = {
+            "morning": payload.get("morning"),
+            "summary": payload.get("summary") or {},
+        }
+    return history
+
+
+def _payload_to_series_item(payload: Dict[str, Any]) -> Dict[str, Any]:
+    morning = payload.get("morning") or {}
+    load_metrics = payload.get("load_metrics") or {}
+    recs = payload.get("recommendations") or {}
+    units = payload.get("units") or {}
+    summary = payload.get("summary") or {}
+    readiness = payload.get("readiness") or {}
+
+    return {
+        "date": payload.get("date"),
+        "readiness": readiness.get("score"),
+        "load_day": summary.get("training_load_sum", 0),
+        "load_7d": load_metrics.get("load_7d"),
+        "load_28d": load_metrics.get("load_28d"),
+        "ratio": load_metrics.get("load_ratio"),
+        "ratio_label": load_metrics.get("load_ratio_label"),
+        "resting_hr": morning.get("resting_hr"),
+        "hrv": morning.get("hrv"),
+        "respiration": morning.get("respiration"),
+        "sleep_h": morning.get("sleep_h"),
+        "spo2": morning.get("pulse_ox"),
+        "recommendation_hybrid": recs.get("hybrid"),
+        "recommendation_run": recs.get("run"),
+        "recommendation_bike": recs.get("bike"),
+        "recommendation_strength": recs.get("strength"),
+        "units_hybrid": units.get("hybrid", []),
+        "units_run": units.get("run", []),
+        "units_bike": units.get("bike", []),
+        "units_strength": units.get("strength", []),
+        "activities": payload.get("activities", []),
+        "recommendation_day": payload.get("recommendation_day"),
+        "ai_prompt": payload.get("ai_prompt"),
+    }
+
+
+def _build_series(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    items: List[Dict[str, Any]] = []
+    for row in rows:
+        payload = row.get("data") or {}
+        if payload.get("date"):
+            items.append(_payload_to_series_item(payload))
+    items.sort(key=lambda item: item["date"])
+    return items
+
+
+def _build_prompt_from_payload(payload: Optional[Dict[str, Any]], mode: str) -> str:
+    if not payload:
+        return "Keine Daten verfügbar."
+
+    mode = _mode_or_default(mode)
+    recommendation_day = payload.get("recommendation_day") or payload.get("date")
+    morning = payload.get("morning")
+    summary = payload.get("summary") or {}
+    load_metrics = payload.get("load_metrics") or {}
+    activities = [ActivitySummary(**a) for a in (payload.get("activities") or [])]
+    recommendations = payload.get("recommendations") or {}
+    units = (payload.get("units") or {}).get(mode) or (payload.get("units") or {}).get("hybrid", [])
+
+    return report_build_ai_prompt(
+        mode=mode,
+        recommendation_day=recommendation_day,
+        today_day=payload.get("date"),
+        latest_morning=None if not morning else type("MorningProxy", (), morning)(),
+        today_summary=summary,
+        today_load_metrics=load_metrics,
+        today_activities=activities,
+        dashboard_recommendations=recommendations,
+        units=units,
+    )
+
+
+def _upsert_payload(payload: Dict[str, Any]) -> None:
+    (
+        supabase.table("training_days")
+        .upsert({"date": payload["date"], "data": payload}, on_conflict="date")
+        .execute()
+    )
+
+
 @app.route("/api/history")
 @requires_auth
 def api_history():
-    res = supabase.table("training_days") \
-        .select("*") \
-        .order("date", desc=True) \
-        .limit(30) \
-        .execute()
-
-    return {"rows": res.data or []}
+    rows = list(reversed(_fetch_rows(limit=30)))
+    return {"rows": rows}
 
 
 @app.route("/api/dashboard")
 @requires_auth
 def api_dashboard():
-    res = supabase.table("training_days") \
-        .select("*") \
-        .order("date", desc=False) \
-        .limit(60) \
-        .execute()
-
-    rows = res.data or []
-
-    series = []
-    for row in rows:
-        d = row.get("data") or {}
-
-        morning = d.get("morning") or {}
-        load_metrics = d.get("load_metrics") or {}
-        recs = d.get("recommendations") or {}
-
-        series.append({
-            "date": d.get("date"),
-            "readiness": (d.get("readiness") or {}).get("score"),
-            "load_day": (d.get("summary") or {}).get("training_load_sum", 0),
-            "load_7d": load_metrics.get("load_7d"),
-            "load_28d": load_metrics.get("load_28d"),
-            "ratio": load_metrics.get("load_ratio"),
-            "ratio_label": load_metrics.get("load_ratio_label"),
-            "resting_hr": morning.get("resting_hr"),
-            "hrv": morning.get("hrv"),
-            "respiration": morning.get("respiration"),
-            "sleep_h": morning.get("sleep_h"),
-            "spo2": morning.get("pulse_ox"),
-            "recommendation_hybrid": recs.get("hybrid"),
-            "recommendation_run": recs.get("run"),
-            "recommendation_bike": recs.get("bike"),
-            "recommendation_strength": recs.get("strength"),
-            "units_hybrid": (d.get("units") or {}).get("hybrid", []),
-            "units_run": (d.get("units") or {}).get("run", []),
-            "units_bike": (d.get("units") or {}).get("bike", []),
-            "units_strength": (d.get("units") or {}).get("strength", []),
-            "activities": d.get("activities", []),
-        })
-
+    rows = _fetch_rows(limit=90)
+    series = _build_series(rows)
     latest = series[-1] if series else None
     return {"latest": latest, "series": series}
 
 
 @app.route("/api/ai-prompt")
+@requires_auth
 def api_ai_prompt():
-    from flask import request
-    mode = request.args.get("mode", "hybrid")
-    if mode not in {"hybrid", "run", "bike", "strength"}:
-        mode = "hybrid"
-
-    history = load_history()
-    series = build_series(history)
-    latest = series[-1] if series else None
-    return jsonify({"mode": mode, "prompt": build_ai_prompt(latest, mode)})
+    mode = _mode_or_default(request.args.get("mode", "hybrid"))
+    rows = _fetch_rows(limit=1)
+    latest_payload = rows[-1].get("data") if rows else None
+    return jsonify({"mode": mode, "prompt": _build_prompt_from_payload(latest_payload, mode)})
 
 
 @app.route("/")
@@ -872,52 +628,58 @@ def api_ai_prompt():
 def index():
     return render_template_string(HTML)
 
-import subprocess
 
 @app.route("/api/update")
 @requires_auth
 def update_data():
-    from garmin_hybrid_report_v61_full import main_logic
+    rows = _fetch_rows(limit=120)
+    history = _history_from_rows(rows)
+    client = load_client()
+    recent_activities = get_recent_activities(client, 400)
 
-    data = main_logic(mode="hybrid")
+    payload = main_logic_for_day(
+        day=date.today().isoformat(),
+        mode="hybrid",
+        history=history,
+        client=client,
+        recent_activities=recent_activities,
+        persist_history=False,
+    )
+    _upsert_payload(payload)
+    return {"status": "updated", "date": payload["date"]}
 
-    supabase.table("training_days").upsert(
-        {
-            "date": data["date"],
-            "data": data
-        },
-        on_conflict="date"
-    ).execute()
-
-    return {"status": "updated", "date": data["date"]}
 
 @app.route("/api/backfill")
 @requires_auth
 def backfill_data():
-    from garmin_hybrid_report_v61_full import main_logic_for_day
-    from datetime import date, timedelta
+    days = int(request.args.get("days", "28"))
+    days = max(1, min(days, 180))
 
-    results = []
+    rows = _fetch_rows(limit=365)
+    history = _history_from_rows(rows)
+    client = load_client()
+    recent_activities = get_recent_activities(client, 400)
 
-    for i in range(27, -1, -1):
-        day = (date.today() - timedelta(days=i)).isoformat()
-        data = main_logic_for_day(day=day, mode="hybrid")
-
-        supabase.table("training_days").upsert(
-            {
-                "date": data["date"],
-                "data": data
-            },
-            on_conflict="date"
-        ).execute()
-
-        results.append(data["date"])
+    results: List[str] = []
+    for offset in range(days - 1, -1, -1):
+        day = (date.today() - timedelta(days=offset)).isoformat()
+        payload = main_logic_for_day(
+            day=day,
+            mode="hybrid",
+            history=history,
+            client=client,
+            recent_activities=recent_activities,
+            persist_history=False,
+        )
+        _upsert_payload(payload)
+        results.append(day)
 
     return {
         "status": "backfilled",
         "days": len(results),
-        "dates": results
+        "dates": results,
     }
-    
+
+
 if __name__ == "__main__":
     app.run(debug=True)

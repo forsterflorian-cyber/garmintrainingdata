@@ -41,6 +41,8 @@ except Exception:
 
 DEFAULT_TOKENS_PATH = os.getenv("GARMIN_TOKENS_PATH", str(Path.home() / ".garminconnect"))
 DEFAULT_HISTORY_PATH = "training_history.json"
+MIN_BASELINE_SAMPLES = int(os.getenv("GARMIN_MIN_BASELINE_SAMPLES", "7"))
+MIN_RATIO_HISTORY_DAYS = int(os.getenv("GARMIN_MIN_RATIO_HISTORY_DAYS", "7"))
 
 
 @dataclass
@@ -363,6 +365,29 @@ def update_history(
     }
 
 
+def available_history_days(history: Dict[str, Any], current_day: str, window_days: int, include_current: bool = True) -> int:
+    days = history.get("days", {})
+    current = datetime.strptime(current_day, "%Y-%m-%d").date()
+    earliest = current - timedelta(days=window_days - 1)
+    count = 0
+    for d, payload in days.items():
+        try:
+            day_date = datetime.strptime(d, "%Y-%m-%d").date()
+        except Exception:
+            continue
+        if day_date < earliest or day_date > current:
+            continue
+        if not include_current and day_date == current:
+            continue
+        morning = payload.get("morning") or {}
+        summary = payload.get("summary") or {}
+        has_data = any(isinstance(morning.get(k), (int, float)) for k in ("hrv", "resting_hr", "respiration", "sleep_h"))
+        has_data = has_data or isinstance(summary.get("training_load_sum"), (int, float))
+        if has_data:
+            count += 1
+    return count
+
+
 def history_window(history: Dict[str, Any], current_day: str, field: str, baseline_days: int) -> List[float]:
     days = history.get("days", {})
     current = datetime.strptime(current_day, "%Y-%m-%d").date()
@@ -409,9 +434,10 @@ def compute_readiness(
     history: Dict[str, Any],
     day_str: str,
     baseline_days: int,
+    min_samples: int = MIN_BASELINE_SAMPLES,
 ) -> Dict[str, Any]:
     if not morning:
-        return {"score": None, "bands": {}, "baselines": {}}
+        return {"score": None, "bands": {}, "baselines": {}, "reason": "no_morning_metrics"}
 
     fields = {
         "hrv": True,
@@ -429,6 +455,11 @@ def compute_readiness(
         baseline, std = median_std(vals)
         current = getattr(morning, field)
         baselines[field] = {"baseline": baseline, "std": std, "n": len(vals)}
+
+        if len(vals) < min_samples:
+            bands[field] = "-"
+            continue
+
         bands[field] = band_text(current, baseline, std, higher_is_better)
 
         if current is not None and baseline is not None and std is not None:
@@ -440,12 +471,12 @@ def compute_readiness(
             contributions.append(z)
 
     if not contributions:
-        return {"score": None, "bands": bands, "baselines": baselines}
+        return {"score": None, "bands": bands, "baselines": baselines, "reason": "insufficient_baseline_history"}
 
     avg_z = sum(contributions) / len(contributions)
     score = round(50 + avg_z * 15)
     score = max(1, min(99, score))
-    return {"score": score, "bands": bands, "baselines": baselines}
+    return {"score": score, "bands": bands, "baselines": baselines, "reason": None}
 
 
 def get_day_load(history: Dict[str, Any], day_str: str) -> float:
@@ -464,15 +495,23 @@ def rolling_load(history: Dict[str, Any], end_day_str: str, window_days: int) ->
     return round(total, 1)
 
 
-def compute_load_metrics(history: Dict[str, Any], day_str: str) -> Dict[str, Optional[float]]:
+def compute_load_metrics(
+    history: Dict[str, Any],
+    day_str: str,
+    min_history_days: int = MIN_RATIO_HISTORY_DAYS,
+) -> Dict[str, Optional[float]]:
     acute_7d = rolling_load(history, day_str, 7)
     chronic_28d = rolling_load(history, day_str, 28)
 
     acute_daily_avg = acute_7d / 7.0 if acute_7d > 0 else 0.0
     chronic_daily_avg = chronic_28d / 28.0 if chronic_28d > 0 else 0.0
+    history_days = available_history_days(history, day_str, 28, include_current=True)
 
     ratio = None
-    if chronic_daily_avg > 0:
+    reason = None
+    if history_days < min_history_days:
+        reason = "insufficient_load_history"
+    elif chronic_daily_avg > 0:
         ratio = round(acute_daily_avg / chronic_daily_avg, 2)
 
     return {
@@ -481,11 +520,15 @@ def compute_load_metrics(history: Dict[str, Any], day_str: str) -> Dict[str, Opt
         "load_7d_daily_avg": round(acute_daily_avg, 1),
         "load_28d_daily_avg": round(chronic_daily_avg, 1),
         "load_ratio": ratio,
+        "history_days_considered": history_days,
+        "load_ratio_reason": reason,
     }
 
 
-def load_ratio_label(ratio: Optional[float]) -> str:
+def load_ratio_label(ratio: Optional[float], reason: Optional[str] = None) -> str:
     if ratio is None:
+        if reason == "insufficient_load_history":
+            return "zu wenig Historie"
         return "-"
     if ratio < 0.8:
         return "unter Soll"
@@ -987,7 +1030,7 @@ def main() -> int:
 
         readiness = compute_readiness(morning, history, day_str, args.baseline_days)
         load_metrics = compute_load_metrics(history, day_str)
-        load_metrics["load_ratio_label"] = load_ratio_label(load_metrics.get("load_ratio"))
+        load_metrics["load_ratio_label"] = load_ratio_label(load_metrics.get("load_ratio"), load_metrics.get("load_ratio_reason"))
         load_metrics["readiness_score"] = readiness.get("score")
 
         trained_today = has_training_today(recent_activities, day_str)
@@ -1061,11 +1104,21 @@ def main() -> int:
 
     print(f"History updated: {args.history}")
     return 0
-def main_logic_for_day(day: str, mode: str = "hybrid") -> dict:
-    client = load_client()
-    history = load_history(DEFAULT_HISTORY_PATH)
+def main_logic_for_day(
+    day: str,
+    mode: str = "hybrid",
+    history: Optional[Dict[str, Any]] = None,
+    client: Optional[Garmin] = None,
+    recent_activities: Optional[List[ActivitySummary]] = None,
+    baseline_days: int = 21,
+    persist_history: bool = False,
+) -> dict:
+    client = client or load_client()
+    history = history if history is not None else load_history(DEFAULT_HISTORY_PATH)
 
-    recent_activities = get_recent_activities(client, 400)
+    if recent_activities is None:
+        recent_activities = get_recent_activities(client, 400)
+
     activities_for_day = [a for a in recent_activities if a.date_local == day]
 
     morning = None
@@ -1077,9 +1130,9 @@ def main_logic_for_day(day: str, mode: str = "hybrid") -> dict:
     summary = aggregate_day(activities_for_day)
     update_history(history, day, morning, summary)
 
-    readiness = compute_readiness(morning, history, day, 21)
+    readiness = compute_readiness(morning, history, day, baseline_days)
     load_metrics = compute_load_metrics(history, day)
-    load_metrics["load_ratio_label"] = load_ratio_label(load_metrics.get("load_ratio"))
+    load_metrics["load_ratio_label"] = load_ratio_label(load_metrics.get("load_ratio"), load_metrics.get("load_ratio_reason"))
     load_metrics["readiness_score"] = readiness.get("score")
 
     trained_that_day = len(activities_for_day) > 0
@@ -1111,7 +1164,7 @@ def main_logic_for_day(day: str, mode: str = "hybrid") -> dict:
         units=units.get(mode, units["hybrid"]),
     )
 
-    return {
+    payload = {
         "date": day,
         "recommendation_day": recommendation_day,
         "mode": mode,
@@ -1124,9 +1177,15 @@ def main_logic_for_day(day: str, mode: str = "hybrid") -> dict:
         "units": units,
         "ai_prompt": ai_prompt,
     }
+
+    if persist_history:
+        save_history(DEFAULT_HISTORY_PATH, history)
+
+    return payload
+
     
 def main_logic(mode: str = "hybrid") -> dict:
-    return main_logic_for_day(date.today().isoformat(), mode)
+    return main_logic_for_day(date.today().isoformat(), mode, persist_history=True)
 
 if __name__ == "__main__":
     raise SystemExit(main())
