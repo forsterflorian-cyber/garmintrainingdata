@@ -521,7 +521,25 @@ async function updateData(){
           </div>
         </div>
       </div>
-
+<div class="card span-12">
+  <div class="section-title">Heutige Einheiten</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Start</th>
+        <th>Typ</th>
+        <th>Name</th>
+        <th>Dauer</th>
+        <th>ØHF</th>
+        <th>MaxHF</th>
+        <th>TEa</th>
+        <th>TEan</th>
+        <th>Load</th>
+      </tr>
+    </thead>
+    <tbody id="todayActivitiesTable"></tbody>
+  </table>
+</div>
       <div class="card span-12">
         <div class="section-title">Empfohlene Einheiten</div>
         <div class="hint" id="unitsIntro">Konkrete Optionen passend zum gewählten Modus.</div>
@@ -697,6 +715,24 @@ function render(data) {
   el("flagStrength").textContent = flags.strength;
   el("flagMax").textContent = flags.max;
 
+const acts = latest.activities || [];
+
+el("todayActivitiesTable").innerHTML = acts.length
+  ? acts.map(a => `
+    <tr>
+      <td>${a.start_local || "-"}</td>
+      <td>${a.type_key || "-"}</td>
+      <td>${a.name || "-"}</td>
+      <td>${a.duration_min ?? "-"}</td>
+      <td>${a.avg_hr ?? "-"}</td>
+      <td>${a.max_hr ?? "-"}</td>
+      <td>${a.aerobic_te ?? "-"}</td>
+      <td>${a.anaerobic_te ?? "-"}</td>
+      <td>${a.training_load ?? "-"}</td>
+    </tr>
+  `).join("")
+  : `<tr><td colspan="9">Keine Einheiten für diesen Tag vorhanden.</td></tr>`;
+  
   drawChart("readinessChart", data.series.slice(-21), [
     { key: "readiness", color: "#35c759" }
   ]);
@@ -811,6 +847,7 @@ def api_dashboard():
             "units_run": (d.get("units") or {}).get("run", []),
             "units_bike": (d.get("units") or {}).get("bike", []),
             "units_strength": (d.get("units") or {}).get("strength", []),
+            "activities": d.get("activities", []),
         })
 
     latest = series[-1] if series else None
@@ -854,5 +891,33 @@ def update_data():
 
     return {"status": "updated", "date": data["date"]}
 
+@app.route("/api/backfill")
+@requires_auth
+def backfill_data():
+    from garmin_hybrid_report_v61_full import main_logic_for_day
+    from datetime import date, timedelta
+
+    results = []
+
+    for i in range(27, -1, -1):
+        day = (date.today() - timedelta(days=i)).isoformat()
+        data = main_logic_for_day(day=day, mode="hybrid")
+
+        supabase.table("training_days").upsert(
+            {
+                "date": data["date"],
+                "data": data
+            },
+            on_conflict="date"
+        ).execute()
+
+        results.append(data["date"])
+
+    return {
+        "status": "backfilled",
+        "days": len(results),
+        "dates": results
+    }
+    
 if __name__ == "__main__":
     app.run(debug=True)
