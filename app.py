@@ -761,23 +761,60 @@ fetch("/api/dashboard")
 
 @app.route("/api/history")
 @requires_auth
-def get_history():
-
+def api_history():
     res = supabase.table("training_days") \
         .select("*") \
         .order("date", desc=True) \
         .limit(30) \
         .execute()
 
-    return res.data
+    return {"rows": res.data or []}
 
 
 @app.route("/api/dashboard")
+@requires_auth
 def api_dashboard():
-    history = load_history()
-    series = build_series(history)
+    res = supabase.table("training_days") \
+        .select("*") \
+        .order("date", desc=False) \
+        .limit(60) \
+        .execute()
+
+    rows = res.data or []
+
+    series = []
+    for row in rows:
+        d = row.get("data") or {}
+
+        morning = d.get("morning") or {}
+        load_metrics = d.get("load_metrics") or {}
+        recs = d.get("recommendations") or {}
+
+        series.append({
+            "date": d.get("date"),
+            "readiness": (d.get("readiness") or {}).get("score"),
+            "load_day": (d.get("summary") or {}).get("training_load_sum", 0),
+            "load_7d": load_metrics.get("load_7d"),
+            "load_28d": load_metrics.get("load_28d"),
+            "ratio": load_metrics.get("load_ratio"),
+            "ratio_label": load_metrics.get("load_ratio_label"),
+            "resting_hr": morning.get("resting_hr"),
+            "hrv": morning.get("hrv"),
+            "respiration": morning.get("respiration"),
+            "sleep_h": morning.get("sleep_h"),
+            "spo2": morning.get("pulse_ox"),
+            "recommendation_hybrid": recs.get("hybrid"),
+            "recommendation_run": recs.get("run"),
+            "recommendation_bike": recs.get("bike"),
+            "recommendation_strength": recs.get("strength"),
+            "units_hybrid": (d.get("units") or {}).get("hybrid", []),
+            "units_run": (d.get("units") or {}).get("run", []),
+            "units_bike": (d.get("units") or {}).get("bike", []),
+            "units_strength": (d.get("units") or {}).get("strength", []),
+        })
+
     latest = series[-1] if series else None
-    return jsonify({"latest": latest, "series": series})
+    return {"latest": latest, "series": series}
 
 
 @app.route("/api/ai-prompt")
