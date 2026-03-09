@@ -793,7 +793,7 @@ import subprocess
 def update_data():
 
     subprocess.run(
-        ["python", "garmin_hybrid_report_v61_full.py",
+        ["python", "garmin_hybrid_full.py",
          "--days-backfill", "28",
          "--days", "1"],
         check=False
