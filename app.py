@@ -424,6 +424,17 @@ HTML = """
   </style>
 </head>
 <body>
+<button onclick="updateData()">Daten aktualisieren</button>
+
+<script>
+function updateData(){
+ fetch("/api/update")
+   .then(r=>r.json())
+   .then(d=>{
+     location.reload()
+   })
+}
+</script>
   <div class="wrap">
     <h1>Garmin Training Dashboard</h1>
     <div class="sub">Readiness, 7d/28d Load, konkrete Einheiten und KI-Prompt aus deiner training_history.json</div>
@@ -775,6 +786,20 @@ def api_ai_prompt():
 def index():
     return render_template_string(HTML)
 
+import subprocess
+
+@app.route("/api/update")
+@requires_auth
+def update_data():
+
+    subprocess.run(
+        ["python", "garmin_hybrid_report_v61_full.py",
+         "--days-backfill", "28",
+         "--days", "1"],
+        check=False
+    )
+
+    return {"status": "updated"}
 
 if __name__ == "__main__":
     app.run(debug=True)
