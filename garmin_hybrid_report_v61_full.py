@@ -1061,7 +1061,78 @@ def main() -> int:
 
     print(f"History updated: {args.history}")
     return 0
+    
+def main_logic(mode: str = "hybrid") -> dict:
+    """
+    Vercel-tauglicher Einstieg für das Dashboard.
+    Holt heutige Daten, berechnet Empfehlung und gibt JSON zurück.
+    Speichert nichts auf das lokale Dateisystem.
+    """
+    client = load_client()
+    history = load_history(DEFAULT_HISTORY_PATH)
 
+    recent_activities = get_recent_activities(client, 400)
+    today_str = date.today().isoformat()
+
+    activities_today = [a for a in recent_activities if a.date_local == today_str]
+
+    morning = None
+    if True:
+        try:
+            morning, _bundle = fetch_morning_metrics(client, today_str)
+        except Exception:
+            morning = None
+
+    summary = aggregate_day(activities_today)
+    update_history(history, today_str, morning, summary)
+
+    readiness = compute_readiness(morning, history, today_str, 21)
+    load_metrics = compute_load_metrics(history, today_str)
+    load_metrics["load_ratio_label"] = load_ratio_label(load_metrics.get("load_ratio"))
+    load_metrics["readiness_score"] = readiness.get("score")
+
+    trained_today = has_training_today(recent_activities, today_str)
+    recommendation_day = infer_target_day(today_str, morning is not None, trained_today)
+
+    recs = {
+        "hybrid": recommendation(morning, summary, readiness, load_metrics, "hybrid"),
+        "run": recommendation(morning, summary, readiness, load_metrics, "run"),
+        "bike": recommendation(morning, summary, readiness, load_metrics, "bike"),
+        "strength": recommendation(morning, summary, readiness, load_metrics, "strength"),
+    }
+
+    units = {
+        "hybrid": suggested_units(readiness.get("score"), load_metrics.get("load_ratio"), "hybrid"),
+        "run": suggested_units(readiness.get("score"), load_metrics.get("load_ratio"), "run"),
+        "bike": suggested_units(readiness.get("score"), load_metrics.get("load_ratio"), "bike"),
+        "strength": suggested_units(readiness.get("score"), load_metrics.get("load_ratio"), "strength"),
+    }
+
+    ai_prompt = build_ai_prompt(
+        mode=mode,
+        recommendation_day=recommendation_day,
+        today_day=today_str,
+        latest_morning=morning,
+        today_summary=summary,
+        today_load_metrics=load_metrics,
+        today_activities=activities_today,
+        dashboard_recommendations=recs,
+        units=units.get(mode, units["hybrid"]),
+    )
+
+    return {
+        "date": today_str,
+        "recommendation_day": recommendation_day,
+        "mode": mode,
+        "morning": asdict(morning) if morning else None,
+        "activities": [asdict(a) for a in activities_today],
+        "summary": summary,
+        "readiness": readiness,
+        "load_metrics": load_metrics,
+        "recommendations": recs,
+        "units": units,
+        "ai_prompt": ai_prompt,
+    }
 
 if __name__ == "__main__":
     raise SystemExit(main())

@@ -803,17 +803,16 @@ import subprocess
 @app.route("/api/update")
 @requires_auth
 def update_data():
-
     from garmin_hybrid_report_v61_full import main_logic
 
-    data = main_logic()
+    data = main_logic(mode="hybrid")
 
     supabase.table("training_days").upsert({
         "date": data["date"],
         "data": data
     }).execute()
 
-    return {"status": "updated"}
+    return {"status": "updated", "date": data["date"]}
 
 if __name__ == "__main__":
     app.run(debug=True)
