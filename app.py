@@ -807,10 +807,13 @@ def update_data():
 
     data = main_logic(mode="hybrid")
 
-    supabase.table("training_days").upsert({
-        "date": data["date"],
-        "data": data
-    }).execute()
+    supabase.table("training_days").upsert(
+        {
+            "date": data["date"],
+            "data": data
+        },
+        on_conflict="date"
+    ).execute()
 
     return {"status": "updated", "date": data["date"]}
 
