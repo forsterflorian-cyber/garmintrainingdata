@@ -2,6 +2,7 @@ from flask import Flask, jsonify, render_template_string
 import json
 from pathlib import Path
 from datetime import datetime, timedelta
+from auth import requires_auth
 
 app = Flask(__name__)
 
@@ -770,6 +771,7 @@ def api_ai_prompt():
 
 
 @app.route("/")
+@requires_auth
 def index():
     return render_template_string(HTML)
 
