@@ -1061,38 +1061,29 @@ def main() -> int:
 
     print(f"History updated: {args.history}")
     return 0
-    
-def main_logic(mode: str = "hybrid") -> dict:
-    """
-    Vercel-tauglicher Einstieg für das Dashboard.
-    Holt heutige Daten, berechnet Empfehlung und gibt JSON zurück.
-    Speichert nichts auf das lokale Dateisystem.
-    """
+def main_logic_for_day(day: str, mode: str = "hybrid") -> dict:
     client = load_client()
     history = load_history(DEFAULT_HISTORY_PATH)
 
     recent_activities = get_recent_activities(client, 400)
-    today_str = date.today().isoformat()
-
-    activities_today = [a for a in recent_activities if a.date_local == today_str]
+    activities_for_day = [a for a in recent_activities if a.date_local == day]
 
     morning = None
-    if True:
-        try:
-            morning, _bundle = fetch_morning_metrics(client, today_str)
-        except Exception:
-            morning = None
+    try:
+        morning, _bundle = fetch_morning_metrics(client, day)
+    except Exception:
+        morning = None
 
-    summary = aggregate_day(activities_today)
-    update_history(history, today_str, morning, summary)
+    summary = aggregate_day(activities_for_day)
+    update_history(history, day, morning, summary)
 
-    readiness = compute_readiness(morning, history, today_str, 21)
-    load_metrics = compute_load_metrics(history, today_str)
+    readiness = compute_readiness(morning, history, day, 21)
+    load_metrics = compute_load_metrics(history, day)
     load_metrics["load_ratio_label"] = load_ratio_label(load_metrics.get("load_ratio"))
     load_metrics["readiness_score"] = readiness.get("score")
 
-    trained_today = has_training_today(recent_activities, today_str)
-    recommendation_day = infer_target_day(today_str, morning is not None, trained_today)
+    trained_that_day = len(activities_for_day) > 0
+    recommendation_day = infer_target_day(day, morning is not None, trained_that_day)
 
     recs = {
         "hybrid": recommendation(morning, summary, readiness, load_metrics, "hybrid"),
@@ -1111,21 +1102,21 @@ def main_logic(mode: str = "hybrid") -> dict:
     ai_prompt = build_ai_prompt(
         mode=mode,
         recommendation_day=recommendation_day,
-        today_day=today_str,
+        today_day=day,
         latest_morning=morning,
         today_summary=summary,
         today_load_metrics=load_metrics,
-        today_activities=activities_today,
+        today_activities=activities_for_day,
         dashboard_recommendations=recs,
         units=units.get(mode, units["hybrid"]),
     )
 
     return {
-        "date": today_str,
+        "date": day,
         "recommendation_day": recommendation_day,
         "mode": mode,
         "morning": asdict(morning) if morning else None,
-        "activities": [asdict(a) for a in activities_today],
+        "activities": [asdict(a) for a in activities_for_day],
         "summary": summary,
         "readiness": readiness,
         "load_metrics": load_metrics,
@@ -1133,6 +1124,9 @@ def main_logic(mode: str = "hybrid") -> dict:
         "units": units,
         "ai_prompt": ai_prompt,
     }
+    
+def main_logic(mode: str = "hybrid") -> dict:
+    return main_logic_for_day(date.today().isoformat(), mode)
 
 if __name__ == "__main__":
     raise SystemExit(main())
