@@ -3,6 +3,13 @@ import json
 from pathlib import Path
 from datetime import datetime, timedelta
 from auth import requires_auth
+from supabase import create_client
+import os
+
+supabase = create_client(
+    os.getenv("SUPABASE_URL"),
+    os.getenv("SUPABASE_KEY")
+)
 
 app = Flask(__name__)
 
@@ -427,12 +434,9 @@ HTML = """
 <button onclick="updateData()">Daten aktualisieren</button>
 
 <script>
-function updateData(){
- fetch("/api/update")
-   .then(r=>r.json())
-   .then(d=>{
-     location.reload()
-   })
+async function updateData(){
+  await fetch("/api/update")
+  location.reload()
 }
 </script>
   <div class="wrap">
@@ -756,8 +760,16 @@ fetch("/api/dashboard")
 
 
 @app.route("/api/history")
-def api_history():
-    return jsonify(load_history())
+@requires_auth
+def get_history():
+
+    res = supabase.table("training_days") \
+        .select("*") \
+        .order("date", desc=True) \
+        .limit(30) \
+        .execute()
+
+    return res.data
 
 
 @app.route("/api/dashboard")
@@ -792,12 +804,14 @@ import subprocess
 @requires_auth
 def update_data():
 
-    subprocess.run(
-        ["python", "garmin_hybrid_full.py",
-         "--days-backfill", "28",
-         "--days", "1"],
-        check=False
-    )
+    from garmin_hybrid_report_v61_full import main_logic
+
+    data = main_logic()
+
+    supabase.table("training_days").upsert({
+        "date": data["date"],
+        "data": data
+    }).execute()
 
     return {"status": "updated"}
 
