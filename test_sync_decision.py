@@ -13,7 +13,7 @@ class SyncDecisionTests(unittest.TestCase):
             freshness_threshold_hours=6,
             stale_threshold_hours=12,
             backfill_threshold_days=3,
-            auto_backfill_limit_days=14,
+            auto_backfill_limit_days=3,
             lock_ttl_seconds=600,
             auto_poll_seconds=5,
         )
@@ -37,7 +37,7 @@ class SyncDecisionTests(unittest.TestCase):
 
     def test_auto_sync_uses_backfill_for_small_stale_gap(self):
         status = self._status(last_success_hours_ago=10)
-        needs = self._needs(missing_days=10, missing_recent_day=True, has_credentials=True)
+        needs = self._needs(missing_days=3, missing_recent_day=True, has_credentials=True)
 
         decision = decide_sync_action(
             status,
@@ -51,6 +51,25 @@ class SyncDecisionTests(unittest.TestCase):
         self.assertTrue(decision["should_start"])
         self.assertEqual("backfill", decision["mode"])
         self.assertEqual("gap_detected", decision["reason"])
+
+    def test_auto_sync_uses_update_for_large_gap_and_sets_backfill_recommendation(self):
+        status = self._status(last_success_hours_ago=10)
+        needs = self._needs(missing_days=10, missing_recent_day=True, has_credentials=True)
+
+        decision = decide_sync_action(
+            status,
+            self.now,
+            needs,
+            trigger_source="auto",
+            requested_mode="auto",
+            policy=self.policy,
+        )
+        response = build_sync_status_response(status, needs, now=self.now, policy=self.policy)
+
+        self.assertTrue(decision["should_start"])
+        self.assertEqual("update", decision["mode"])
+        self.assertEqual("missing_recent_day", decision["reason"])
+        self.assertTrue(response["backfillRecommended"])
 
     def test_auto_sync_skips_when_fresh_even_with_small_gap(self):
         status = self._status(last_success_hours_ago=2)
@@ -121,16 +140,44 @@ class SyncDecisionTests(unittest.TestCase):
         self.assertEqual("credentials_invalid", decision["reason"])
         self.assertEqual("blocked", response["syncState"])
 
+    def test_transient_cooldown_keeps_error_state_and_disables_actions(self):
+        status = self._status(
+            last_success_hours_ago=24,
+            sync_state="error",
+            last_error_category="transient",
+            cooldown_minutes=15,
+        )
+        needs = self._needs(missing_days=2, missing_recent_day=True, has_credentials=True)
+
+        decision = decide_sync_action(
+            status,
+            self.now,
+            needs,
+            trigger_source="auto",
+            requested_mode="auto",
+            policy=self.policy,
+        )
+        response = build_sync_status_response(status, needs, now=self.now, policy=self.policy)
+
+        self.assertFalse(decision["should_start"])
+        self.assertEqual("cooldown_active", decision["reason"])
+        self.assertEqual("error", response["syncState"])
+        self.assertFalse(response["canStartSync"])
+
     def _status(
         self,
         *,
         last_success_hours_ago: int | None,
         sync_state: str = "success",
         last_error_category: str | None = None,
+        cooldown_minutes: int | None = None,
     ) -> dict:
         last_successful_sync_at = None
         if last_success_hours_ago is not None:
             last_successful_sync_at = (self.now - timedelta(hours=last_success_hours_ago)).isoformat()
+        cooldown_until = None
+        if cooldown_minutes is not None:
+            cooldown_until = (self.now + timedelta(minutes=cooldown_minutes)).isoformat()
         return {
             "sync_state": sync_state,
             "sync_mode": "update",
@@ -141,7 +188,7 @@ class SyncDecisionTests(unittest.TestCase):
             "last_error_category": last_error_category,
             "last_error_code": None,
             "last_error_message": None,
-            "cooldown_until": None,
+            "cooldown_until": cooldown_until,
             "auto_sync_enabled": True,
             "baseline_rebuild_recommended": False,
             "lock_token": None,

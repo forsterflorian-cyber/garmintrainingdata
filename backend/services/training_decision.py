@@ -78,7 +78,7 @@ def compute_training_decision(input_payload: Dict[str, Any]) -> Dict[str, Any]:
         "tomorrowImpact": tomorrow_impact,
         "statusChips": [
             {"label": "Recovery", "value": recovery["status"], "tone": recovery["tone"]},
-            {"label": "Load Tolerance", "value": load_tolerance["status"], "tone": load_tolerance["tone"]},
+            {"label": "Load", "value": load_tolerance["status"], "tone": load_tolerance["tone"]},
             {"label": "Intensity", "value": intensity["label"], "tone": intensity["tone"]},
             {"label": "Confidence", "value": confidence["value"], "tone": confidence["tone"]},
         ],

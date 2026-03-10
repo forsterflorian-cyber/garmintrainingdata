@@ -9,23 +9,23 @@ export function renderSyncStatusBadge(sync) {
   const state = safeText(sync?.syncState, "unknown");
   target.innerHTML = `
     <article class="sync-badge" data-tone="${safeHtml(syncToneForState(state))}">
-      <span>Sync</span>
-      <strong>${safeHtml(syncLabelForState(state))}</strong>
+      <strong>${safeHtml(syncBadgeText(state))}</strong>
     </article>
   `;
 }
 
 export function syncLabelForState(state) {
   return {
-    never_synced: "Never synced",
+    never_synced: "Never Synced",
     fresh: "Fresh",
     stale: "Stale",
     syncing: "Syncing",
     backfilling: "Backfilling",
     success: "Success",
-    partial_success: "Partial",
+    partial_success: "Partial Success",
     error: "Error",
     blocked: "Blocked",
+    unknown: "Unknown",
   }[state] || state;
 }
 
@@ -40,4 +40,17 @@ export function syncToneForState(state) {
     return "critical";
   }
   return "neutral";
+}
+
+function syncBadgeText(state) {
+  if (state === "syncing") {
+    return "Syncing...";
+  }
+  if (state === "backfilling") {
+    return "Backfilling...";
+  }
+  if (state === "error") {
+    return "Sync Error";
+  }
+  return `Sync: ${syncLabelForState(state)}`;
 }

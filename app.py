@@ -52,8 +52,8 @@ def _missing_public_config() -> List[str]:
 def _garmin_error_message(exc: Exception) -> str:
     message = str(exc).strip()
     if "Authentication failed" in message or "401 Client Error" in message:
-        return "Garmin Anmeldung fehlgeschlagen. Bitte Garmin E-Mail und Passwort pruefen."
-    return message or "Garmin Fehler"
+        return "Garmin sign-in failed. Check your Garmin email and password."
+    return message or "Garmin error"
 
 
 def _is_garmin_auth_error(exc: Exception) -> bool:
@@ -78,7 +78,7 @@ def _fetch_rows_for_user(user_id: str, *, limit: Optional[int] = None) -> List[D
             user_id=user_id,
         )
         raise ServiceError(
-            "Dashboard-Daten konnten nicht geladen werden.",
+            "Dashboard data could not be loaded.",
             status_code=500,
             category=ErrorCategory.DB,
             event="training_days.fetch_failed",
@@ -199,7 +199,7 @@ def connect_garmin():
 
     if not isinstance(email, str) or not isinstance(password, str):
         raise ServiceError(
-            "email and password are required",
+            "Email and password are required.",
             status_code=400,
             category=ErrorCategory.AUTH,
             event="garmin.connect_missing_fields",
@@ -209,7 +209,7 @@ def connect_garmin():
     password = password.strip()
     if not email or not password:
         raise ServiceError(
-            "email and password are required",
+            "Email and password are required.",
             status_code=400,
             category=ErrorCategory.AUTH,
             event="garmin.connect_empty_fields",

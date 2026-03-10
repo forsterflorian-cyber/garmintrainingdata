@@ -106,7 +106,7 @@ def build_series(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 def build_prompt_from_payload(payload: Optional[Dict[str, Any]], mode: str) -> str:
     if not payload:
-        return "Keine Daten verfuegbar."
+        return "No Data Available."
 
     mode = mode_or_default(mode)
     recommendation_day = payload.get("recommendation_day") or payload.get("date")

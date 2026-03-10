@@ -3,7 +3,7 @@ import { el, safeHtml } from "../../lib/formatters.js";
 export function renderAvoidTodayPanel(items) {
   const target = el("avoidTodayList");
   if (!items || !items.length) {
-    target.innerHTML = '<div class="muted-copy">Nothing explicitly blocked today.</div>';
+    target.innerHTML = '<div class="muted-copy">Nothing Blocked Today.</div>';
     return;
   }
 

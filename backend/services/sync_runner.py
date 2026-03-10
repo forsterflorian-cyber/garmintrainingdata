@@ -176,7 +176,8 @@ class SyncRunner:
         return self._sync_recent_window(user_id, lock_token=lock_token, days=3)
 
     def _run_backfill_sync_blocking(self, user_id: str, *, lock_token: str, days: Optional[int]) -> tuple[int, int, Optional[str]]:
-        chunk_days = max(1, min(int(days or 7), self._policy.auto_backfill_limit_days))
+        # Auto backfill stays deliberately small; manual backfill can request a larger window.
+        chunk_days = self._policy.auto_backfill_limit_days if days is None else max(1, int(days))
         rows = fetch_training_rows(
             self._supabase,
             user_id,

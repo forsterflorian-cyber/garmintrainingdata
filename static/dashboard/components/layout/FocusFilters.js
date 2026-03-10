@@ -6,7 +6,7 @@ export function hydrateRangeSelect(rangeFilters, selectedDays) {
   (rangeFilters || []).forEach((days) => {
     const option = document.createElement("option");
     option.value = String(days);
-    option.textContent = days >= 365 ? "1 Jahr" : `${days} Tage`;
+    option.textContent = days >= 365 ? "1 Year" : `${days} Days`;
     option.selected = Number(days) === Number(selectedDays);
     select.appendChild(option);
   });

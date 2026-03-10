@@ -18,7 +18,7 @@ export function renderBestOptionsPanel(options, { selectedType = null } = {}) {
     >
       <div class="session-card-head">
         <p class="eyebrow">Option ${index + 1}</p>
-        <span class="session-selection-state">${option.type === selectedType ? "Tomorrow" : "Preview"}</span>
+        <span class="session-selection-state">${option.type === selectedType ? "Selected" : "Preview"}</span>
       </div>
       <h4>${safeHtml(option.label)}</h4>
       <p class="session-details">${safeHtml(option.details)}</p>

@@ -643,10 +643,6 @@ th {
   border-top: 1px solid rgba(173, 212, 202, 0.08);
 }
 
-.plan-selection-copy {
-  margin: 12px 0 0;
-}
-
 .analysis-divider {
   height: 1px;
   margin: 18px 0;
@@ -681,10 +677,11 @@ th {
 .sync-badge {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
+  gap: 8px;
+  padding: 8px 12px;
   border-radius: 999px;
-  background: rgba(4, 15, 20, 0.76);
+  background: rgba(4, 15, 20, 0.62);
+  box-shadow: none;
 }
 
 .sync-badge span,
@@ -702,6 +699,12 @@ th {
 .sync-badge strong,
 .sync-panel strong {
   color: var(--text);
+}
+
+.sync-badge strong {
+  font-size: 0.86rem;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .decision-layout {
@@ -722,9 +725,9 @@ th {
 }
 
 .decision-hero {
-  padding: 26px;
+  padding: 30px;
   background:
-    linear-gradient(135deg, rgba(255, 184, 92, 0.12), rgba(86, 208, 179, 0.06)),
+    linear-gradient(135deg, rgba(255, 184, 92, 0.16), rgba(86, 208, 179, 0.08)),
     rgba(7, 23, 30, 0.92);
 }
 
@@ -751,19 +754,22 @@ th {
 
 .decision-level {
   font-family: "Space Grotesk", sans-serif;
-  font-size: clamp(2.4rem, 4vw, 4rem);
-  line-height: 0.92;
+  font-size: clamp(2.8rem, 5vw, 4.8rem);
+  line-height: 0.9;
   margin-top: 8px;
+  max-width: 10ch;
 }
 
 .decision-summary {
-  margin: 16px 0 10px;
-  font-size: 1.1rem;
-  max-width: 46ch;
+  margin: 18px 0 10px;
+  font-size: 1.02rem;
+  max-width: 52ch;
+  color: rgba(242, 244, 238, 0.92);
 }
 
 .decision-conclusion {
   margin: 0 0 18px;
+  max-width: 48ch;
 }
 
 .decision-score-stack {
@@ -883,9 +889,15 @@ th {
   outline-offset: 3px;
 }
 
-.decision-session-card[data-selected="true"] {
-  border-color: rgba(255, 184, 92, 0.36);
-  box-shadow: inset 0 0 0 1px rgba(255, 184, 92, 0.22);
+.plan-option-card[data-selected="true"] {
+  border-color: rgba(255, 184, 92, 0.54);
+  background:
+    linear-gradient(160deg, rgba(255, 184, 92, 0.12), rgba(86, 208, 179, 0.06)),
+    rgba(8, 23, 30, 0.94);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 184, 92, 0.26),
+    0 18px 36px rgba(0, 0, 0, 0.18);
+  transform: translateY(-2px);
 }
 
 .decision-session-card h4 {
@@ -923,6 +935,12 @@ th {
 
 .plan-option-card[data-selected="true"] .session-selection-state {
   background: rgba(255, 184, 92, 0.14);
+  color: var(--text);
+}
+
+.plan-option-card[data-selected="true"] .session-tag,
+.plan-option-card[data-selected="true"] .session-fatigue {
+  background: rgba(255, 184, 92, 0.12);
   color: var(--text);
 }
 
@@ -998,6 +1016,18 @@ th {
   margin-top: 14px;
 }
 
+.plan-header-meta {
+  display: grid;
+  gap: 6px;
+  justify-items: end;
+}
+
+.plan-sync-meta {
+  margin: 0;
+  font-size: 0.82rem;
+  text-align: right;
+}
+
 .decision-hero[data-tone="positive"],
 .forecast-panel[data-tone="positive"],
 .recommendation-chip[data-tone="positive"],
@@ -1068,6 +1098,14 @@ th {
 
   .utility-row {
     justify-content: stretch;
+  }
+
+  .plan-header-meta {
+    justify-items: start;
+  }
+
+  .plan-sync-meta {
+    text-align: left;
   }
 
   .surface-nav {

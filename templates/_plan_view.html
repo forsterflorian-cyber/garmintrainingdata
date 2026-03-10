@@ -3,7 +3,11 @@
     <div>
       <p class="eyebrow">Plan</p>
       <h2 id="decisionTargetDay">-</h2>
-      <p id="decisionTargetMeta" class="muted-copy">Noch kein Trainingstag geladen.</p>
+      <p id="decisionTargetMeta" class="muted-copy">No Focus Day Loaded.</p>
+    </div>
+    <div class="plan-header-meta">
+      <div id="syncStatusBadge"></div>
+      <p id="planSyncMeta" class="muted-copy plan-sync-meta">No Sync Data Yet.</p>
     </div>
   </div>
 
@@ -11,12 +15,12 @@
     <article id="decisionHero" class="decision-hero" data-tone="neutral">
       <div class="decision-level-row">
         <div>
-          <p class="decision-label">Decision Level</p>
+          <p class="decision-label">Training Recommendation</p>
           <div id="decisionLevel" class="decision-level">-</div>
         </div>
         <div class="decision-score-stack">
           <div class="score-chip">
-            <span>Deviation</span>
+            <span>Recovery</span>
             <strong id="decisionScore">-</strong>
           </div>
           <div class="score-chip">
@@ -25,8 +29,8 @@
           </div>
         </div>
       </div>
-      <p id="decisionSummary" class="decision-summary">Noch keine Entscheidung verfuegbar.</p>
-      <p id="decisionConclusion" class="decision-conclusion muted-copy">Die Empfehlung erscheint nach dem naechsten Sync.</p>
+      <p id="decisionSummary" class="decision-summary">No Recommendation Yet.</p>
+      <p id="decisionConclusion" class="decision-conclusion muted-copy">Recommendation updates after the next sync.</p>
       <div id="decisionStatusChips" class="decision-status-chips"></div>
     </article>
 
@@ -34,19 +38,19 @@
       <article id="forecastPanel" class="side-panel forecast-panel" data-tone="neutral">
         <div class="panel-head-space compact-head">
           <div>
-            <p class="eyebrow">Tomorrow projection</p>
+            <p class="eyebrow">Tomorrow Impact</p>
             <h3 id="forecastLevel">-</h3>
           </div>
         </div>
-        <p id="forecastText" class="muted-copy">Waehle eine Session, um morgen zu projizieren.</p>
+        <p id="forecastText" class="muted-copy">Select a session to preview tomorrow.</p>
         <p id="forecastMeta" class="forecast-meta">-</p>
       </article>
 
       <article class="side-panel">
         <div class="panel-head-space compact-head">
           <div>
-            <p class="eyebrow">Avoid today</p>
-            <h3>Do not spend the day here</h3>
+            <p class="eyebrow">Avoid Today</p>
+            <h3>Skip These</h3>
           </div>
         </div>
         <div id="avoidTodayList" class="avoid-list"></div>
@@ -58,11 +62,10 @@
     <div class="panel-head-space compact-head">
       <div>
         <p class="eyebrow">Best Options Today</p>
-        <h3>Concrete sessions for the current decision</h3>
+        <h3>Recommended Sessions</h3>
       </div>
-      <p class="muted-copy">Select an option to preview its effect on tomorrow.</p>
+      <p class="muted-copy">Select a session to preview tomorrow.</p>
     </div>
     <div id="decisionSessionGrid" class="decision-session-grid"></div>
-    <p id="plannedSessionSelection" class="muted-copy plan-selection-copy">Waehle eine Session, um die Morgen-Prognose zu aktualisieren.</p>
   </section>
 </section>

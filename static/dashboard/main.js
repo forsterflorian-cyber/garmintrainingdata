@@ -9,10 +9,10 @@ import { renderBaselineComparisonCard } from "./components/metrics/BaselineCompa
 import { renderLoadTrendCard } from "./components/trends/LoadTrendCard.js";
 import { renderReadinessTrendCard } from "./components/trends/ReadinessTrendCard.js";
 import { renderSyncActionButtons } from "./components/sync/SyncActionButtons.js";
-import { renderSyncStatusBadge } from "./components/sync/SyncStatusBadge.js";
-import { renderSyncStatusPanel } from "./components/sync/SyncStatusPanel.js";
+import { renderSyncStatusBadge, syncLabelForState } from "./components/sync/SyncStatusBadge.js";
+import { renderSyncStatusPanel, syncReasonLabel } from "./components/sync/SyncStatusPanel.js";
 import { applyPlannedSessionForecast, getPlannedSession, setPlannedSession } from "./lib/forecastUtils.js";
-import { el, formatDateTime, formatNumber, safeHtml, safeText } from "./lib/formatters.js";
+import { el, formatDateTime, formatNumber, formatRelativeHours, safeHtml, safeText } from "./lib/formatters.js";
 
 const APP_CONFIG = window.__APP_CONFIG__ || {};
 const SURFACE_VIEWS = ["plan", "analysis", "sync", "debug"];
@@ -60,7 +60,7 @@ function requireSupabaseClient() {
 
 function missingConfigMessage() {
   const missing = APP_CONFIG.missingPublicConfig || [];
-  return missing.length ? `Supabase Konfiguration fehlt: ${missing.join(", ")}` : "Supabase Konfiguration fehlt.";
+  return missing.length ? `Missing Supabase Config: ${missing.join(", ")}` : "Missing Supabase Config.";
 }
 
 function authRedirectUrl() {
@@ -142,7 +142,7 @@ function syncSurfaceUi({ syncHash = true } = {}) {
     const forcedOn = Boolean(APP_CONFIG.debugMode);
     advancedToggle.hidden = forcedOn;
     advancedToggle.setAttribute("aria-pressed", state.advancedMode ? "true" : "false");
-    advancedToggle.textContent = state.advancedMode ? "Advanced on" : "Advanced off";
+    advancedToggle.textContent = state.advancedMode ? "Debug On" : "Debug Off";
   }
 
   if (syncHash) {
@@ -180,7 +180,7 @@ async function getToken() {
 async function apiGet(url) {
   const token = await getToken();
   if (!token) {
-    throw new Error("Bitte zuerst einloggen.");
+    throw new Error("Sign in first.");
   }
 
   const response = await fetch(url, {
@@ -196,7 +196,7 @@ async function apiGet(url) {
 async function apiPost(url, body = null) {
   const token = await getToken();
   if (!token) {
-    throw new Error("Bitte zuerst einloggen.");
+    throw new Error("Sign in first.");
   }
 
   const response = await fetch(url, {
@@ -235,10 +235,10 @@ function getStoredPlannedSession() {
 
 function validPlannedSessionType() {
   const plannedType = getStoredPlannedSession();
-  if (!plannedType) {
-    return null;
+  if (plannedType && currentBestOptions().some((option) => option.type === plannedType)) {
+    return plannedType;
   }
-  return currentBestOptions().some((option) => option.type === plannedType) ? plannedType : null;
+  return currentBestOptions()[0]?.type || null;
 }
 
 function setStoredPlannedSessionType(sessionType) {
@@ -247,18 +247,18 @@ function setStoredPlannedSessionType(sessionType) {
 
 function syncStatusSummary(sync) {
   if (!sync?.syncState) {
-    return "Noch kein Sync verfuegbar.";
+    return "No Sync Data Yet.";
   }
   if (sync.lastErrorMessage) {
     return sync.lastErrorMessage;
   }
   if (sync.lastSuccessfulSyncAt) {
-    return `Letzter Erfolg ${formatDateTime(sync.lastSuccessfulSyncAt)}`;
+    return `Last Success ${formatDateTime(sync.lastSuccessfulSyncAt)}`;
   }
   if (sync.syncState === "never_synced") {
-    return "Noch kein erfolgreicher Sync.";
+    return "No Successful Sync Yet.";
   }
-  return safeText(sync.statusReason, "Kein Sync-Detail.");
+  return sync.statusReason ? syncReasonLabel(sync.statusReason) : "No Sync Detail.";
 }
 
 function renderSyncUi(sync = state.syncStatus) {
@@ -267,8 +267,12 @@ function renderSyncUi(sync = state.syncStatus) {
   renderSyncActionButtons(sync || {});
   bindSyncActionButtons();
 
+  if (el("planSyncMeta")) {
+    el("planSyncMeta").textContent = planSyncMeta(sync);
+  }
+
   if (el("snapshotSyncStatus")) {
-    el("snapshotSyncStatus").textContent = safeText(sync?.syncState);
+    el("snapshotSyncStatus").textContent = safeText(syncLabelForState(sync?.syncState || "unknown"));
   }
   if (el("snapshotSyncMeta")) {
     el("snapshotSyncMeta").textContent = syncStatusSummary(sync);
@@ -290,16 +294,13 @@ function renderDecisionPanels(payload) {
     impact,
     plannedOptionLabel: selectedOption?.label || null,
   });
-  el("plannedSessionSelection").textContent = selectedOption
-    ? `Geplante Session: ${selectedOption.label}`
-    : "Waehle eine Session, um die Morgen-Prognose zu aktualisieren.";
 }
 
 function renderSummary(payload) {
   el("summaryAverageReadiness").textContent = formatNumber(payload?.summary?.avgReadiness, 1);
   el("summaryAverageLoad").textContent = formatNumber(payload?.summary?.avgLoad, 1);
   el("snapshotFocusDate").textContent = safeText(payload?.date);
-  el("snapshotWindow").textContent = `${safeText(payload?.filters?.periodDays)} Tage`;
+  el("snapshotWindow").textContent = `${safeText(payload?.filters?.periodDays)} Days`;
   el("snapshotRatio").textContent = formatNumber(payload?.load?.ratio7to28, 2);
   el("snapshotStress").textContent = safeText(payload?.decision?.loadTolerance);
   el("snapshotModelRecommendation").textContent = safeText(payload?.decision?.primaryRecommendation);
@@ -307,7 +308,8 @@ function renderSummary(payload) {
 
 function renderDebug(payload) {
   const decisionDebug = payload?.debug || payload?.decision?.debug || {};
-  const syncDebug = payload?.sync?.debug || null;
+  const sync = payload?.sync || null;
+  const syncDebug = sync?.debug || null;
   const lines = [];
 
   if (decisionDebug.recoveryScore !== undefined) {
@@ -323,11 +325,16 @@ function renderDebug(payload) {
     lines.push(`hardSessionsLast3d=${safeText(decisionDebug.hardSessionsLast3d)}`);
   }
   (decisionDebug.selectedRulePath || []).forEach((line) => lines.push(line));
+  if (sync) {
+    lines.push(`syncState=${safeText(sync.syncState)}`);
+    lines.push(`syncReason=${safeText(sync.statusReason)}`);
+    lines.push(`syncLock=${safeText(sync.isLocked)}`);
+    lines.push(`syncCooldownUntil=${safeText(sync.cooldownUntil)}`);
+    lines.push(`syncLastErrorCode=${safeText(sync.lastErrorCode)}`);
+    lines.push(`syncMissingDays=${safeText(sync.missingDaysCount)}`);
+  }
   if (syncDebug) {
-    lines.push(`syncReason=${safeText(syncDebug.autoSyncDecisionReason)}`);
-    lines.push(`syncLock=${safeText(syncDebug.lockActive)}`);
-    lines.push(`syncCooldown=${safeText(syncDebug.cooldownActive)}`);
-    lines.push(`syncMissingDays=${safeText(syncDebug.missingDaysCount)}`);
+    lines.push(`syncCooldownActive=${safeText(syncDebug.cooldownActive)}`);
   }
 
   el("debugList").innerHTML = lines.length
@@ -353,7 +360,7 @@ function renderHeatmap(rows, activeDate) {
 function renderHistoryTable(rows, activeDate) {
   const target = el("historyTable");
   if (!rows.length) {
-    target.innerHTML = '<tr><td colspan="5" class="muted-copy">Keine Historie fuer den Zeitraum vorhanden.</td></tr>';
+    target.innerHTML = '<tr><td colspan="5" class="muted-copy">No History In Range.</td></tr>';
     return;
   }
 
@@ -377,9 +384,9 @@ function renderHistoryTable(rows, activeDate) {
 
 function renderActivities(payload) {
   const activities = payload?.detail?.activities || [];
-  el("activityHeadline").textContent = payload?.date ? `Training am ${payload.date}` : "Training des Fokus-Tags";
+  el("activityHeadline").textContent = payload?.date ? `Activities On ${payload.date}` : "Focus Day Activities";
   if (!activities.length) {
-    el("activityList").innerHTML = '<div class="muted-copy">Keine Einheiten fuer diesen Tag vorhanden.</div>';
+    el("activityList").innerHTML = '<div class="muted-copy">No Activities For This Day.</div>';
     return;
   }
 
@@ -387,7 +394,7 @@ function renderActivities(payload) {
     <article class="activity-card">
       <div class="relative-head">
         <div>
-          <div class="relative-title">${safeHtml(activity.name || activity.type_key || "Aktivitaet")}</div>
+          <div class="relative-title">${safeHtml(activity.name || activity.type_key || "Activity")}</div>
           <div class="muted-copy">${safeHtml(activity.type_key || "-")} | ${safeHtml(activity.start_local || "-")}</div>
         </div>
         <div class="relative-value">${formatNumber(activity.duration_min, 0)} min</div>
@@ -404,9 +411,9 @@ function renderActivities(payload) {
 
 function renderModeUnits(payload) {
   const units = (payload?.detail?.legacyUnits || {})[state.mode] || (payload?.detail?.legacyUnits || {}).hybrid || [];
-  el("unitIntro").textContent = `Aktiver Modus: ${state.mode}.`;
+  el("unitIntro").textContent = `Mode: ${state.mode}.`;
   if (!units.length) {
-    el("unitCards").innerHTML = '<div class="muted-copy">Keine Original-Modellvorschlaege vorhanden.</div>';
+    el("unitCards").innerHTML = '<div class="muted-copy">No Model Outputs Available.</div>';
     return;
   }
 
@@ -482,7 +489,7 @@ async function refreshSyncStatus({ reloadDashboardOnTerminal = false } = {}) {
     }
   } catch (error) {
     stopSyncPolling();
-    setGarminStatus(`Sync-Status Fehler: ${error.message}`);
+    setGarminStatus(`Sync Status Error: ${error.message}`);
   } finally {
     state.syncPollInFlight = false;
   }
@@ -525,7 +532,7 @@ async function startSyncRequest(url, body, optimisticState) {
       await loadDashboard({ skipAutoSync: true });
     }
   } catch (error) {
-    setGarminStatus(`Sync Fehler: ${error.message}`);
+    setGarminStatus(`Sync Error: ${error.message}`);
     await refreshSyncStatus({ reloadDashboardOnTerminal: false });
   }
 }
@@ -549,7 +556,7 @@ function maybeAutoSync() {
 
   state.autoSyncKey = key;
   const optimisticState = sync.autoSyncMode === "backfill" ? "backfilling" : "syncing";
-  setGarminStatus(sync.autoSyncMode === "backfill" ? "Auto-Backfill gestartet..." : "Auto-Sync gestartet...");
+  setGarminStatus(sync.autoSyncMode === "backfill" ? "Auto Backfill Started..." : "Auto Sync Started...");
   void startSyncRequest("/api/sync/auto", null, optimisticState);
 }
 
@@ -564,7 +571,7 @@ async function loadDashboard({ skipAutoSync = false } = {}) {
     if (payload?.account?.connected) {
       setGarminStatus(syncStatusSummary(payload.sync));
     } else {
-      setGarminStatus("Garmin noch nicht verbunden.");
+      setGarminStatus("Garmin not connected.");
     }
 
     if (isSyncActive(payload?.sync?.syncState)) {
@@ -577,11 +584,11 @@ async function loadDashboard({ skipAutoSync = false } = {}) {
       maybeAutoSync();
     }
   } catch (error) {
-    if (String(error.message || "").includes("einloggen")) {
+    if (String(error.message || "").toLowerCase().includes("sign in")) {
       setLoggedOutState();
       return;
     }
-    setGarminStatus(`Fehler: ${error.message}`);
+    setGarminStatus(`Error: ${error.message}`);
   }
 }
 
@@ -592,7 +599,7 @@ function setLoggedOutState() {
   state.autoSyncKey = null;
   stopSyncPolling();
   renderDashboard();
-  setGarminStatus("Bitte zuerst einloggen, um Garmin zu verbinden.");
+  setGarminStatus("Sign in to reconnect Garmin.");
 }
 
 async function login() {
@@ -603,7 +610,7 @@ async function login() {
     alert(error.message);
     return;
   }
-  setAuthStatus("Anmeldung erfolgreich. Session wird geladen...");
+  setAuthStatus("Signed in. Loading session...");
 }
 
 async function signup() {
@@ -618,7 +625,7 @@ async function signup() {
     alert(error.message);
     return;
   }
-  alert("Registrierung gestartet. Bestaetige deine E-Mail, falls Supabase dies verlangt.");
+  alert("Sign-up started. Confirm your email if required.");
 }
 
 async function logout() {
@@ -627,7 +634,7 @@ async function logout() {
   }
   state.currentSession = null;
   setAuthUi(null);
-  setAuthStatus("Nicht eingeloggt");
+  setAuthStatus("Not Signed In");
   setLoggedOutState();
 }
 
@@ -636,15 +643,15 @@ async function connectGarmin() {
     const email = el("garminEmail").value.trim();
     const password = el("garminPassword").value.trim();
     if (!email || !password) {
-      setGarminStatus("Bitte Garmin E-Mail und Passwort eingeben.");
+      setGarminStatus("Enter Garmin email and password.");
       return;
     }
-    setGarminStatus("Garmin Zugang wird geprueft...");
+    setGarminStatus("Checking Garmin credentials...");
     await apiPost("/api/garmin/connect", { email, password });
-    setGarminStatus("Garmin Zugangsdaten gespeichert.");
+    setGarminStatus("Garmin connected.");
     await loadDashboard();
   } catch (error) {
-    setGarminStatus(`Fehler: ${error.message}`);
+    setGarminStatus(`Error: ${error.message}`);
     await refreshSyncStatus({ reloadDashboardOnTerminal: false });
   }
 }
@@ -657,6 +664,29 @@ function bindPlannedSessionButtons() {
       renderDecisionPanels(state.dashboard || {});
     });
   });
+}
+
+function planSyncMeta(sync) {
+  if (!sync?.syncState) {
+    return "No Sync Data Yet.";
+  }
+  if (sync.syncState === "syncing" || sync.syncState === "backfilling") {
+    return "Sync In Progress";
+  }
+  const updatedAt = sync.lastFinishedSyncAt || sync.lastSuccessfulSyncAt;
+  if (updatedAt) {
+    return `Last Updated ${formatRelativeHours(updatedAt)}`;
+  }
+  if (sync.syncState === "never_synced") {
+    return "Never Synced";
+  }
+  if (sync.syncState === "blocked") {
+    return "Reconnect Garmin";
+  }
+  if (sync.syncState === "error") {
+    return "Check Sync Surface";
+  }
+  return syncReasonLabel(sync.statusReason);
 }
 
 function bindSyncActionButtons() {
@@ -750,14 +780,14 @@ function bindEvents() {
   el("copyPromptBtn").addEventListener("click", async () => {
     try {
       await navigator.clipboard.writeText(el("aiPrompt").value);
-      el("copyPromptBtn").textContent = "Kopiert";
+      el("copyPromptBtn").textContent = "Copied";
       setTimeout(() => {
-        el("copyPromptBtn").textContent = "Prompt kopieren";
+        el("copyPromptBtn").textContent = "Copy Prompt";
       }, 1200);
     } catch (_error) {
-      el("copyPromptBtn").textContent = "Fehler";
+      el("copyPromptBtn").textContent = "Error";
       setTimeout(() => {
-        el("copyPromptBtn").textContent = "Prompt kopieren";
+        el("copyPromptBtn").textContent = "Copy Prompt";
       }, 1200);
     }
   });
@@ -775,7 +805,7 @@ async function restoreSession() {
   state.currentSession = data?.session || null;
   const user = state.currentSession?.user || null;
   setAuthUi(user);
-  setAuthStatus(user ? `Eingeloggt als ${user.email}` : "Nicht eingeloggt");
+  setAuthStatus(user ? `Signed in as ${user.email}` : "Not Signed In");
 
   if (state.currentSession?.access_token) {
     await loadDashboard();
@@ -789,7 +819,7 @@ if (supabaseClient) {
     state.currentSession = session || null;
     const user = state.currentSession?.user || null;
     setAuthUi(user);
-    setAuthStatus(user ? `Eingeloggt als ${user.email}` : "Nicht eingeloggt");
+    setAuthStatus(user ? `Signed in as ${user.email}` : "Not Signed In");
     window.setTimeout(async () => {
       if (state.currentSession?.access_token) {
         await loadDashboard();

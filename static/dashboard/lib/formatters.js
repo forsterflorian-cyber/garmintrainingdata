@@ -39,9 +39,9 @@ export function formatDateTime(value) {
   if (Number.isNaN(date.getTime())) {
     return String(value);
   }
-  return date.toLocaleString("de-DE", {
+  return date.toLocaleString("en-GB", {
     year: "numeric",
-    month: "2-digit",
+    month: "short",
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
@@ -58,12 +58,12 @@ export function formatRelativeHours(value) {
   }
   const diffHours = (Date.now() - date.getTime()) / 3600000;
   if (diffHours < 1) {
-    return "vor <1h";
+    return "<1h ago";
   }
   if (diffHours < 24) {
-    return `vor ${Math.round(diffHours)}h`;
+    return `${Math.round(diffHours)}h ago`;
   }
-  return `vor ${Math.round(diffHours / 24)}d`;
+  return `${Math.round(diffHours / 24)}d ago`;
 }
 
 export function toneLabel(tone) {

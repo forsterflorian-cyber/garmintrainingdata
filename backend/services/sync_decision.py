@@ -16,7 +16,7 @@ class SyncPolicy:
     freshness_threshold_hours: int = int(os.environ.get("SYNC_FRESHNESS_HOURS", "6"))
     stale_threshold_hours: int = int(os.environ.get("SYNC_STALE_HOURS", "12"))
     backfill_threshold_days: int = int(os.environ.get("SYNC_BACKFILL_THRESHOLD_DAYS", "3"))
-    auto_backfill_limit_days: int = int(os.environ.get("SYNC_AUTO_BACKFILL_LIMIT_DAYS", "14"))
+    auto_backfill_limit_days: int = int(os.environ.get("SYNC_AUTO_BACKFILL_LIMIT_DAYS", "3"))
     lock_ttl_seconds: int = int(os.environ.get("SYNC_LOCK_TTL_SECONDS", "600"))
     auto_poll_seconds: int = int(os.environ.get("SYNC_POLL_SECONDS", "5"))
 
@@ -34,6 +34,7 @@ def decide_sync_action(
     missing_days_count = int(dashboard_needs.get("missingDaysCount") or 0)
     has_credentials = credentials_available(dashboard_needs)
     backfill_recommended = missing_days_count > policy.backfill_threshold_days
+    small_auto_backfill = 1 < missing_days_count <= policy.auto_backfill_limit_days
     baseline_rebuild_recommended = bool(sync_status.get("baseline_rebuild_recommended"))
     cooldown_active = is_cooldown_active(sync_status, now)
 
@@ -42,8 +43,10 @@ def decide_sync_action(
             return result(False, requested_mode, "already_running", state_before, cooldown_active, backfill_recommended, baseline_rebuild_recommended)
         if not has_credentials:
             return result(False, requested_mode, "credentials_missing", state_before, cooldown_active, backfill_recommended, baseline_rebuild_recommended)
-        if is_blocked_status(sync_status, now):
-            return result(False, requested_mode, blocked_reason(sync_status, now), state_before, cooldown_active, backfill_recommended, baseline_rebuild_recommended)
+        if is_persistent_block(sync_status):
+            return result(False, requested_mode, blocked_reason(sync_status), state_before, cooldown_active, backfill_recommended, baseline_rebuild_recommended)
+        if cooldown_active:
+            return result(False, requested_mode, "cooldown_active", state_before, cooldown_active, backfill_recommended, baseline_rebuild_recommended)
         return result(True, requested_mode, "manual_request", state_before, cooldown_active, backfill_recommended, baseline_rebuild_recommended)
 
     if not sync_status.get("auto_sync_enabled", True):
@@ -55,14 +58,20 @@ def decide_sync_action(
     if not has_credentials:
         return result(False, "update", "credentials_missing", state_before, cooldown_active, backfill_recommended, baseline_rebuild_recommended)
 
-    if is_blocked_status(sync_status, now):
-        return result(False, "update", blocked_reason(sync_status, now), state_before, cooldown_active, backfill_recommended, baseline_rebuild_recommended)
+    if is_persistent_block(sync_status):
+        return result(False, "update", blocked_reason(sync_status), state_before, cooldown_active, backfill_recommended, baseline_rebuild_recommended)
+    if cooldown_active:
+        return result(False, "update", "cooldown_active", state_before, cooldown_active, backfill_recommended, baseline_rebuild_recommended)
+    if state_before == "error":
+        return result(False, "update", "sync_error", state_before, cooldown_active, backfill_recommended, baseline_rebuild_recommended)
+    if state_before == "partial_success":
+        return result(False, "update", "partial_success", state_before, cooldown_active, backfill_recommended, baseline_rebuild_recommended)
 
     if state_before == "never_synced":
         return result(True, "update", "never_synced", state_before, cooldown_active, backfill_recommended, baseline_rebuild_recommended)
 
     if dashboard_needs.get("missingRecentDay") or state_before == "stale":
-        if backfill_recommended and missing_days_count <= policy.auto_backfill_limit_days:
+        if small_auto_backfill:
             return result(True, "backfill", "gap_detected", state_before, cooldown_active, backfill_recommended, baseline_rebuild_recommended)
         return result(
             True,
@@ -91,7 +100,8 @@ def build_sync_status_response(
     manual_allowed = (
         credentials_available(dashboard_needs)
         and normalized_state not in {"syncing", "backfilling"}
-        and not is_blocked_status(sync_status, now)
+        and not is_persistent_block(sync_status)
+        and not is_cooldown_active(sync_status, now)
     )
 
     payload = {
@@ -118,10 +128,13 @@ def build_sync_status_response(
     }
     if include_debug:
         payload["debug"] = {
+            "syncState": normalized_state,
             "lockActive": is_lock_active(sync_status),
             "cooldownActive": is_cooldown_active(sync_status, now),
+            "cooldownUntil": sync_status.get("cooldown_until"),
             "missingDaysCount": int(dashboard_needs.get("missingDaysCount") or 0),
             "autoSyncDecisionReason": decision["reason"],
+            "lastErrorCode": sync_status.get("last_error_code"),
         }
     return payload
 
@@ -143,10 +156,10 @@ def normalize_sync_state(
     if not credentials_available(dashboard_needs):
         return "blocked"
 
-    if is_blocked_status(sync_status, now):
+    if is_persistent_block(sync_status):
         return "blocked"
 
-    if raw_state == "error" and last_successful_sync_at is None:
+    if raw_state == "error":
         return "error"
     if raw_state == "partial_success" and last_finished_sync_at and last_successful_sync_at and last_finished_sync_at >= last_successful_sync_at:
         return "partial_success"
@@ -165,19 +178,17 @@ def is_cooldown_active(sync_status: Dict[str, Any], now: datetime) -> bool:
     return bool(cooldown_until and cooldown_until > now)
 
 
-def is_blocked_status(sync_status: Dict[str, Any], now: datetime) -> bool:
+def is_persistent_block(sync_status: Dict[str, Any]) -> bool:
     if sync_status.get("sync_state") == "blocked":
         return True
     if sync_status.get("last_error_category") in {"auth", "validation", "config"}:
         return True
-    return is_cooldown_active(sync_status, now)
+    return False
 
 
-def blocked_reason(sync_status: Dict[str, Any], now: datetime) -> str:
+def blocked_reason(sync_status: Dict[str, Any]) -> str:
     if sync_status.get("last_error_category") in {"auth", "validation", "config"}:
         return "credentials_invalid"
-    if is_cooldown_active(sync_status, now):
-        return "cooldown_active"
     return "blocked"
 
 
