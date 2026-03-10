@@ -9,7 +9,7 @@ from auth_supabase import require_user
 from flask import Flask, jsonify, render_template_string, request
 from supabase import create_client
 
-from auth import requires_auth
+
 from garmin_hybrid_report_v62_supabase_ready import (
     ActivitySummary,
     build_ai_prompt as report_build_ai_prompt,
@@ -610,7 +610,6 @@ def _upsert_payload(payload: Dict[str, Any]) -> None:
 
 
 @app.route("/api/history")
-@requires_auth
 def api_history():
     rows = list(reversed(_fetch_rows(limit=30)))
     return {"rows": rows}
@@ -637,7 +636,6 @@ def dashboard():
 
 
 @app.route("/api/ai-prompt")
-@requires_auth
 def api_ai_prompt():
     mode = _mode_or_default(request.args.get("mode", "hybrid"))
     rows = _fetch_rows(limit=1)
@@ -646,7 +644,6 @@ def api_ai_prompt():
 
 
 @app.route("/")
-@requires_auth
 def index():
     return render_template_string(HTML)
 
@@ -677,7 +674,6 @@ def update():
 
 
 @app.route("/api/backfill")
-@requires_auth
 def backfill_data():
     days = int(request.args.get("days", "28"))
     days = max(1, min(days, 180))
