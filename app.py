@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional
+from crypto_utils import encrypt, decrypt
+from auth_supabase import require_user
 
 from flask import Flask, jsonify, render_template_string, request
 from supabase import create_client
@@ -16,9 +18,12 @@ from garmin_hybrid_report_v62_supabase_ready import (
     get_recent_activities,
 )
 
+from supabase import create_client
+import os
+
 supabase = create_client(
-    os.getenv("SUPABASE_URL"),
-    os.getenv("SUPABASE_KEY"),
+    os.environ["SUPABASE_URL"],
+    os.environ["SUPABASE_SERVICE_ROLE_KEY"]
 )
 
 app = Flask(__name__)
@@ -133,6 +138,12 @@ async function updateData(){
   await fetch("/api/update")
   location.reload()
 }
+const { data, error } = await supabase.auth.signInWithPassword({
+  email,
+  password
+})
+const session = await supabase.auth.getSession()
+const token = session.data.session.access_token
 </script>
   <div class="wrap">
     <h1>Garmin Training Dashboard</h1>
@@ -605,13 +616,24 @@ def api_history():
     return {"rows": rows}
 
 
-@app.route("/api/dashboard")
-@requires_auth
-def api_dashboard():
-    rows = _fetch_rows(limit=90)
-    series = _build_series(rows)
-    latest = series[-1] if series else None
-    return {"latest": latest, "series": series}
+@app.get("/api/dashboard")
+@require_user
+def dashboard():
+
+    res = supabase.table("training_days") \
+        .select("*") \
+        .eq("user_id", request.user_id) \
+        .order("date") \
+        .execute()
+
+    rows = res.data
+
+    latest = rows[-1]["data"] if rows else None
+
+    return {
+        "latest": latest,
+        "series": rows
+    }
 
 
 @app.route("/api/ai-prompt")
@@ -629,24 +651,29 @@ def index():
     return render_template_string(HTML)
 
 
-@app.route("/api/update")
-@requires_auth
-def update_data():
-    rows = _fetch_rows(limit=120)
-    history = _history_from_rows(rows)
-    client = load_client()
-    recent_activities = get_recent_activities(client, 400)
+@app.post("/api/update")
+@require_user
+def update():
 
-    payload = main_logic_for_day(
-        day=date.today().isoformat(),
-        mode="hybrid",
-        history=history,
-        client=client,
-        recent_activities=recent_activities,
-        persist_history=False,
-    )
-    _upsert_payload(payload)
-    return {"status": "updated", "date": payload["date"]}
+    creds = get_garmin_credentials(request.user_id)
+
+    if not creds:
+        return {"error": "garmin not connected"}, 400
+
+    email, password = creds
+
+    client = Garmin(email, password)
+    client.login()
+
+    report = main_logic()
+
+    supabase.table("training_days").upsert({
+        "user_id": request.user_id,
+        "date": report["date"],
+        "data": report
+    }).execute()
+
+    return {"status": "ok"}
 
 
 @app.route("/api/backfill")
@@ -680,6 +707,42 @@ def backfill_data():
         "dates": results,
     }
 
+@app.post("/api/garmin/connect")
+@require_user
+def connect_garmin():
 
+    data = request.json
+
+    email = data["email"]
+    password = data["password"]
+
+    email_enc = encrypt(email)
+    pw_enc = encrypt(password)
+
+    supabase.table("user_garmin_accounts").upsert({
+        "user_id": request.user_id,
+        "garmin_email_enc": email_enc,
+        "garmin_password_enc": pw_enc
+    }).execute()
+
+    return {"status": "ok"}
+    
+def get_garmin_credentials(user_id):
+
+    res = supabase.table("user_garmin_accounts") \
+        .select("*") \
+        .eq("user_id", user_id) \
+        .execute()
+
+    if not res.data:
+        return None
+
+    row = res.data[0]
+
+    email = decrypt(row["garmin_email_enc"])
+    password = decrypt(row["garmin_password_enc"])
+
+    return email, password
+    
 if __name__ == "__main__":
     app.run(debug=True)
