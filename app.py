@@ -1,25 +1,23 @@
 from __future__ import annotations
 
 import os
-from datetime import date, timedelta
+import shutil
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
-from crypto_utils import encrypt, decrypt
-from auth_supabase import require_user
 
 from flask import Flask, jsonify, render_template_string, request
 from supabase import create_client
 
-
+from auth_supabase import require_user
+from crypto_utils import decrypt, encrypt
 from garmin_hybrid_report_v62_supabase_ready import (
     ActivitySummary,
     build_ai_prompt as report_build_ai_prompt,
+    get_tokens_path,
+    get_recent_activities,
     load_client,
     main_logic_for_day,
-    get_recent_activities,
 )
-
-from supabase import create_client
-import os
 
 supabase = create_client(
     os.environ["SUPABASE_URL"],
@@ -158,10 +156,19 @@ HTML = """
 const SUPABASE_URL = "{{ supabase_url }}";
 const SUPABASE_ANON_KEY = "{{ supabase_anon_key }}";
 
-const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const supabaseClient = window.supabase && SUPABASE_URL && SUPABASE_ANON_KEY
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  : null;
+
+function requireSupabaseClient() {
+  if (!supabaseClient) {
+    throw new Error("Supabase-Konfiguration fehlt.");
+  }
+  return supabaseClient;
+}
 
 async function getToken() {
-  const { data } = await supabaseClient.auth.getSession();
+  const { data } = await requireSupabaseClient().auth.getSession();
   return data.session?.access_token || null;
 }
 
@@ -208,6 +215,11 @@ async function apiPost(url, body = null) {
 }
 
 async function refreshAuthStatus() {
+  if (!supabaseClient) {
+    document.getElementById("authStatus").textContent = "Supabase-Konfiguration fehlt.";
+    return;
+  }
+
   const { data } = await supabaseClient.auth.getSession();
   const user = data.session?.user;
 
@@ -216,11 +228,59 @@ async function refreshAuthStatus() {
     : "Nicht eingeloggt";
 }
 
+function clearDashboard() {
+  dashboardData = null;
+  el("todayDate").textContent = "-";
+  el("todayReadiness").textContent = "-";
+  el("todayReadiness").style.color = "#a8b3d1";
+  el("todayRatio").textContent = "-";
+  el("todayRatio").style.color = "#a8b3d1";
+  el("todayRatioLabel").textContent = "-";
+  el("todayRec").textContent = "-";
+  el("mRestingHr").textContent = "-";
+  el("mHrv").textContent = "-";
+  el("mResp").textContent = "-";
+  el("mSleep").textContent = "-";
+  el("flagEasy").textContent = "-";
+  el("flagQuality").textContent = "-";
+  el("flagStrength").textContent = "-";
+  el("flagMax").textContent = "-";
+  el("todayActivitiesTable").innerHTML = `<tr><td colspan="9">Bitte einloggen, um Trainingsdaten zu sehen.</td></tr>`;
+  el("unitsIntro").textContent = "Bitte einloggen, um Empfehlungen zu sehen.";
+  el("unitsList").innerHTML = "";
+  el("historyTable").innerHTML = `<tr><td colspan="7">Bitte einloggen, um Verlauf zu sehen.</td></tr>`;
+  el("aiPrompt").value = "";
+  el("readinessChart").innerHTML = "";
+  el("loadChart").innerHTML = "";
+}
+
+function setLoggedOutState() {
+  clearDashboard();
+  el("garminStatus").textContent = "Bitte einloggen, um Garmin zu verbinden und Daten zu laden.";
+}
+
+function setNoDataState() {
+  clearDashboard();
+  el("todayActivitiesTable").innerHTML = `<tr><td colspan="9">Noch keine Trainingsdaten vorhanden.</td></tr>`;
+  el("unitsIntro").textContent = "Noch keine Empfehlungen verfugbar. Erst Garmin verbinden und Daten laden.";
+  el("historyTable").innerHTML = `<tr><td colspan="7">Noch keine Historie vorhanden.</td></tr>`;
+  el("aiPrompt").value = "Noch keine Trainingsdaten verfugbar.";
+  el("garminStatus").textContent = "Noch keine Trainingsdaten vorhanden. Garmin verbinden und anschliessend Update oder Backfill starten.";
+}
+
+function isAuthError(message) {
+  return typeof message === "string" && (
+    message.includes("einloggen") ||
+    message.includes("missing token") ||
+    message.includes("invalid token")
+  );
+}
+
 async function login() {
   const email = document.getElementById("loginEmail").value;
   const password = document.getElementById("loginPassword").value;
 
-  const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+  const { error } = await requireSupabaseClient().auth.signInWithPassword({ email, password });
 
   if (error) {
     alert(error.message);
@@ -234,12 +294,16 @@ async function login() {
 async function loadDashboard() {
   try {
     const data = await apiGet("/api/dashboard");
+    if (!data || !data.latest || !Array.isArray(data.series) || !data.series.length) {
+      setNoDataState();
+      return;
+    }
     render(data);
     document.getElementById("garminStatus").textContent = "Dashboard geladen.";
   } catch (e) {
     console.error(e);
-     if (e.message.includes("einloggen")) {
-      document.getElementById("garminStatus").textContent = "Bitte einloggen, um Daten zu sehen.";
+     if (isAuthError(e.message)) {
+      setLoggedOutState();
       return;
     }
     document.getElementById("garminStatus").textContent = `Fehler: ${e.message}`;
@@ -250,7 +314,7 @@ async function signup() {
   const email = document.getElementById("loginEmail").value;
   const password = document.getElementById("loginPassword").value;
 
-  const { error } = await supabaseClient.auth.signUp({ email, password });
+  const { error } = await requireSupabaseClient().auth.signUp({ email, password });
 
   if (error) {
     alert(error.message);
@@ -262,9 +326,11 @@ async function signup() {
 }
 
 async function logout() {
-  await supabaseClient.auth.signOut();
+  if (supabaseClient) {
+    await supabaseClient.auth.signOut();
+  }
   await refreshAuthStatus();
-  location.reload();
+  setLoggedOutState();
 }
 
 async function updateData() {
@@ -649,22 +715,33 @@ el("copyPromptBtn").addEventListener("click", async () => {
   }
 });
 
-supabaseClient.auth.onAuthStateChange(async (_event, session) => {
-  const user = session?.user;
-  document.getElementById("authStatus").textContent = user
-    ? `Eingeloggt als ${user.email}`
-    : "Nicht eingeloggt";
+if (supabaseClient) {
+  supabaseClient.auth.onAuthStateChange(async (_event, session) => {
+    const user = session?.user;
+    document.getElementById("authStatus").textContent = user
+      ? `Eingeloggt als ${user.email}`
+      : "Nicht eingeloggt";
 
-  if (session?.access_token) {
-    await loadDashboard();
-  }
-});
+    if (session?.access_token) {
+      await loadDashboard();
+    } else {
+      setLoggedOutState();
+    }
+  });
+}
 
 (async () => {
   await refreshAuthStatus();
+  if (!supabaseClient) {
+    clearDashboard();
+    el("garminStatus").textContent = "Supabase-Konfiguration fehlt.";
+    return;
+  }
   const token = await getToken();
   if (token) {
     await loadDashboard();
+  } else {
+    setLoggedOutState();
   }
 })();
 </script>
@@ -678,15 +755,19 @@ def _mode_or_default(value: Optional[str]) -> str:
 
 
 def _fetch_rows(user_id: str, limit: int = 120) -> List[Dict[str, Any]]:
-    res = (
+    query = (
         supabase.table("training_days")
         .select("user_id,date,data")
         .eq("user_id", user_id)
-        .order("date", desc=False)
-        .limit(limit)
-        .execute()
+        .order("date", desc=True)
     )
-    return res.data or []
+    if limit > 0:
+        query = query.limit(limit)
+
+    res = query.execute()
+    rows = res.data or []
+    rows.sort(key=lambda row: row.get("date") or "")
+    return rows
 
 
 def _history_from_rows(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -789,11 +870,54 @@ def _upsert_payload(user_id: str, payload: Dict[str, Any]) -> None:
     )
 
 
-@app.route("/api/history")
+def _set_garmin_sync_state(
+    user_id: str,
+    *,
+    sync_status: Optional[str] = None,
+    sync_error: Optional[str] = None,
+    last_sync_at: Optional[str] = None,
+) -> None:
+    updates: Dict[str, Any] = {}
+    if sync_status is not None:
+        updates["sync_status"] = sync_status
+    if sync_error is not None or sync_status == "ok":
+        updates["sync_error"] = sync_error
+    if last_sync_at is not None:
+        updates["last_sync_at"] = last_sync_at
+
+    if not updates:
+        return
+
+    (
+        supabase.table("user_garmin_accounts")
+        .update(updates)
+        .eq("user_id", user_id)
+        .execute()
+    )
+
+
+def _clear_garmin_tokens(user_id: str) -> None:
+    tokens_path = get_tokens_path(user_id)
+    try:
+        if tokens_path.parent.exists():
+            shutil.rmtree(tokens_path.parent, ignore_errors=True)
+    except Exception:
+        pass
+
+
+def _parse_backfill_days(raw_value: str) -> int:
+    try:
+        days = int(raw_value)
+    except (TypeError, ValueError):
+        raise ValueError("days must be an integer")
+    return max(1, min(days, 180))
+
+
+@app.get("/api/history")
 @require_user
 def api_history():
-    rows = list(reversed(_fetch_rows(request.user_id, limit=30)))
-    return {"rows": rows}
+    series = _build_series(_fetch_rows(request.user_id, limit=30))
+    return {"rows": list(reversed(series))}
 
 
 @app.get("/api/dashboard")
@@ -809,7 +933,7 @@ def dashboard():
     }
 
 
-@app.route("/api/ai-prompt")
+@app.get("/api/ai-prompt")
 @require_user
 def api_ai_prompt():
     mode = _mode_or_default(request.args.get("mode", "hybrid"))
@@ -821,7 +945,7 @@ def api_ai_prompt():
     })
 
 
-@app.route("/")
+@app.get("/")
 def index():
     return render_template_string(
         HTML,
@@ -833,59 +957,21 @@ def index():
 @app.post("/api/update")
 @require_user
 def update():
-    creds = get_garmin_credentials(request.user_id)
+    try:
+        creds = get_garmin_credentials(request.user_id)
+        if not creds:
+            return {"error": "garmin not connected"}, 400
 
-    if not creds:
-        return {"error": "garmin not connected"}, 400
+        email, password = creds
+        client = load_client(email=email, password=password, user_id=request.user_id)
 
-    email, password = creds
+        rows = _fetch_rows(request.user_id, limit=365)
+        history = _history_from_rows(rows)
+        recent_activities = get_recent_activities(client, 400)
 
-    client = load_client(email=email, password=password, user_id=request.user_id)
-
-    rows = _fetch_rows(request.user_id, limit=365)
-    history = _history_from_rows(rows)
-    recent_activities = get_recent_activities(client, 400)
-
-    today = date.today().isoformat()
-
-    payload = main_logic_for_day(
-        day=today,
-        mode="hybrid",
-        history=history,
-        client=client,
-        recent_activities=recent_activities,
-        persist_history=False,
-    )
-
-    _upsert_payload(request.user_id, payload)
-
-    return {"status": "ok", "date": payload["date"]}
-
-
-@app.route("/api/backfill", methods=["POST"])
-@require_user
-def backfill_data():
-    days = int(request.args.get("days", "28"))
-    days = max(1, min(days, 180))
-
-    creds = get_garmin_credentials(request.user_id)
-    if not creds:
-        return {"error": "garmin not connected"}, 400
-
-    email, password = creds
-    client = load_client(email=email, password=password,user_id=request.user_id,)
-
-    rows = _fetch_rows(request.user_id, limit=365)
-    history = _history_from_rows(rows)
-    recent_activities = get_recent_activities(client, 400)
-
-    results: List[str] = []
-
-    for offset in range(days - 1, -1, -1):
-        day = (date.today() - timedelta(days=offset)).isoformat()
-
+        today = date.today().isoformat()
         payload = main_logic_for_day(
-            day=day,
+            day=today,
             mode="hybrid",
             history=history,
             client=client,
@@ -894,59 +980,132 @@ def backfill_data():
         )
 
         _upsert_payload(request.user_id, payload)
+        _set_garmin_sync_state(
+            request.user_id,
+            sync_status="ok",
+            sync_error=None,
+            last_sync_at=datetime.now(timezone.utc).isoformat(),
+        )
+        return {"status": "ok", "date": payload["date"]}
+    except RuntimeError as exc:
+        _set_garmin_sync_state(request.user_id, sync_status="error", sync_error=str(exc))
+        return {"error": str(exc)}, 400
+    except Exception as exc:
+        app.logger.exception("Garmin update failed for user %s", request.user_id)
+        _set_garmin_sync_state(request.user_id, sync_status="error", sync_error=str(exc))
+        return {"error": "update failed"}, 500
 
-        history["days"][day] = {
-            "morning": payload.get("morning"),
-            "summary": payload.get("summary") or {},
+
+@app.post("/api/backfill")
+@require_user
+def backfill_data():
+    try:
+        days = _parse_backfill_days(request.args.get("days", "28"))
+    except ValueError as exc:
+        return {"error": str(exc)}, 400
+
+    try:
+        creds = get_garmin_credentials(request.user_id)
+        if not creds:
+            return {"error": "garmin not connected"}, 400
+
+        email, password = creds
+        client = load_client(email=email, password=password, user_id=request.user_id)
+
+        rows = _fetch_rows(request.user_id, limit=365)
+        history = _history_from_rows(rows)
+        recent_activities = get_recent_activities(client, 400)
+
+        results: List[str] = []
+        for offset in range(days - 1, -1, -1):
+            day = (date.today() - timedelta(days=offset)).isoformat()
+            payload = main_logic_for_day(
+                day=day,
+                mode="hybrid",
+                history=history,
+                client=client,
+                recent_activities=recent_activities,
+                persist_history=False,
+            )
+
+            _upsert_payload(request.user_id, payload)
+            history["days"][day] = {
+                "morning": payload.get("morning"),
+                "summary": payload.get("summary") or {},
+            }
+            results.append(day)
+
+        _set_garmin_sync_state(
+            request.user_id,
+            sync_status="ok",
+            sync_error=None,
+            last_sync_at=datetime.now(timezone.utc).isoformat(),
+        )
+        return {
+            "status": "backfilled",
+            "days": len(results),
+            "dates": results,
         }
-
-        results.append(day)
-
-    return {
-        "status": "backfilled",
-        "days": len(results),
-        "dates": results,
-    }
+    except RuntimeError as exc:
+        _set_garmin_sync_state(request.user_id, sync_status="error", sync_error=str(exc))
+        return {"error": str(exc)}, 400
+    except Exception as exc:
+        app.logger.exception("Garmin backfill failed for user %s", request.user_id)
+        _set_garmin_sync_state(request.user_id, sync_status="error", sync_error=str(exc))
+        return {"error": "backfill failed"}, 500
 
 @app.post("/api/garmin/connect")
 @require_user
 def connect_garmin():
+    data = request.get_json(silent=True) or {}
+    email = data.get("email")
+    password = data.get("password")
 
-    data = request.json or {}
+    if not isinstance(email, str) or not isinstance(password, str):
+        return {"error": "email and password are required"}, 400
 
-    email = (data.get("email") or "").strip()
-    password = data.get("password") or ""
-    
+    email = email.strip()
+    password = password.strip()
     if not email or not password:
         return {"error": "email and password are required"}, 400
-        
+
     email_enc = encrypt(email)
-    pw_enc = encrypt(password)
+    password_enc = encrypt(password)
 
-    supabase.table("user_garmin_accounts").upsert({
-        "user_id": request.user_id,
-        "garmin_email_enc": email_enc,
-        "garmin_password_enc": pw_enc
-    }).execute()
-
-   }, on_conflict="user_id").execute()
-    
-def get_garmin_credentials(user_id):
-
-    res = supabase.table("user_garmin_accounts") \
-        .sselect("garmin_email_enc,garmin_password_enc") \
-        .eq("user_id", user_id) \
-        .limit(1) \
+    (
+        supabase.table("user_garmin_accounts")
+        .upsert(
+            {
+                "user_id": request.user_id,
+                "garmin_email_enc": email_enc,
+                "garmin_password_enc": password_enc,
+                "sync_status": "connected",
+                "sync_error": None,
+            },
+            on_conflict="user_id",
+        )
         .execute()
+    )
+
+    _clear_garmin_tokens(request.user_id)
+    return {"status": "connected"}
+
+
+def get_garmin_credentials(user_id: str) -> Optional[tuple[str, str]]:
+    res = (
+        supabase.table("user_garmin_accounts")
+        .select("user_id,garmin_email_enc,garmin_password_enc")
+        .eq("user_id", user_id)
+        .limit(1)
+        .execute()
+    )
 
     if not res.data:
         return None
 
     row = res.data[0]
-
     email = decrypt(row["garmin_email_enc"])
     password = decrypt(row["garmin_password_enc"])
-
     return email, password
     
 if __name__ == "__main__":

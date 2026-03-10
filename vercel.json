@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/(.*)",
-      "destination": "/garmin_dashboard_app.py"
+      "destination": "/app.py"
     }
   ]
 }

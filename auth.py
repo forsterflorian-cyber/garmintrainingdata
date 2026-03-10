@@ -1,33 +1,8 @@
-import os
-import secrets
-from functools import wraps
+"""Legacy auth shim.
 
-from flask import Response, request
+Routes should use bearer-token auth via Supabase, not HTTP Basic Auth.
+"""
 
-USERNAME = os.getenv("DASH_USER", "admin")
-PASSWORD = os.getenv("DASH_PASS", "secret")
+from auth_supabase import require_user, require_user as requires_auth
 
-
-def check_auth(username: str | None, password: str | None) -> bool:
-    if username is None or password is None:
-        return False
-    return secrets.compare_digest(username, USERNAME) and secrets.compare_digest(password, PASSWORD)
-
-
-def authenticate() -> Response:
-    return Response(
-        "Login required",
-        401,
-        {"WWW-Authenticate": 'Basic realm="Login Required"'},
-    )
-
-
-def requires_auth(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        auth = request.authorization
-        if not auth or not check_auth(auth.username, auth.password):
-            return authenticate()
-        return f(*args, **kwargs)
-
-    return decorated
+__all__ = ["require_user", "requires_auth"]

@@ -90,12 +90,30 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def load_client(email: str, password: str, user_id: str) -> Garmin:
+def get_tokens_path(user_id: str) -> Path:
     base_dir = Path(os.getenv("GARMIN_TOKENS_DIR", "/tmp/garmin_tokens"))
     safe_user = hashlib.sha256(user_id.encode()).hexdigest()[:24]
-    tokens_path = base_dir / safe_user / "garmin_tokens"
+    return base_dir / safe_user / "garmin_tokens"
 
-    tokens_path.parent.mkdir(parents=True, exist_ok=True)
+
+def _harden_tokens_path(tokens_path: Path) -> None:
+    try:
+        tokens_path.parent.mkdir(parents=True, exist_ok=True)
+        os.chmod(tokens_path.parent, 0o700)
+    except Exception:
+        pass
+
+    if tokens_path.exists():
+        try:
+            os.chmod(tokens_path, 0o600)
+        except Exception:
+            pass
+
+
+def load_client(email: str, password: str, user_id: str) -> Garmin:
+    tokens_path = get_tokens_path(user_id)
+
+    _harden_tokens_path(tokens_path)
 
     if tokens_path.exists():
         try:
@@ -113,6 +131,7 @@ def load_client(email: str, password: str, user_id: str) -> Garmin:
 
     try:
         garth.dump(str(tokens_path))
+        _harden_tokens_path(tokens_path)
     except Exception:
         pass
 
