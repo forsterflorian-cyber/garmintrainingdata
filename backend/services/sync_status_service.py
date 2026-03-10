@@ -57,7 +57,6 @@ class SyncStatusService:
         response = (
             self._supabase.table(SYNC_STATUS_TABLE)
             .update(payload)
-            .select("*")
             .eq("user_id", user_id)
             .execute()
         )
@@ -80,26 +79,27 @@ class SyncStatusService:
         now_iso = utc_now_iso()
         expires_iso = utc_in_seconds_iso(lock_ttl_seconds)
         version = int(status.get("lock_version") or 0)
-        print("DEBUG: Executing try_acquire_lock with new method order")
-        # Ensure .select() follows the update directly without any potential middle-ware interference
-        query = self._supabase.table(SYNC_STATUS_TABLE).update({
-            "lock_token": lock_token,
-            "lock_acquired_at": now_iso,
-            "lock_expires_at": expires_iso,
-            "lock_version": version + 1,
-            "sync_state": sync_state,
-            "sync_mode": mode,
-            "status_reason": status_reason,
-            "last_attempted_sync_at": now_iso,
-            "last_started_sync_at": now_iso,
-            "updated_at": now_iso,
-        })
         
-        # Apply select immediately
-        query = query.select("*")
-        
-        # Apply filters
-        response = query.eq("user_id", user_id).eq("lock_version", version).execute()
+        response = (
+            self._supabase.table(SYNC_STATUS_TABLE)
+            .update(
+                {
+                    "lock_token": lock_token,
+                    "lock_acquired_at": now_iso,
+                    "lock_expires_at": expires_iso,
+                    "lock_version": version + 1,
+                    "sync_state": sync_state,
+                    "sync_mode": mode,
+                    "status_reason": status_reason,
+                    "last_attempted_sync_at": now_iso,
+                    "last_started_sync_at": now_iso,
+                    "updated_at": now_iso,
+                }
+            )
+            .eq("user_id", user_id)
+            .eq("lock_version", version)
+            .execute()
+        )
         if response.data:
             return True, response.data[0]
         return False, self.ensure_status(user_id)
@@ -113,7 +113,6 @@ class SyncStatusService:
                     "updated_at": utc_now_iso(),
                 }
             )
-            .select("*")
             .eq("user_id", user_id)
             .eq("lock_token", lock_token)
             .execute()
@@ -134,7 +133,6 @@ class SyncStatusService:
         response = (
             self._supabase.table(SYNC_STATUS_TABLE)
             .update(payload)
-            .select("*")
             .eq("user_id", user_id)
             .eq("lock_token", lock_token)
             .execute()
@@ -153,7 +151,6 @@ class SyncStatusService:
                     "started_at": utc_now_iso(),
                 }
             )
-            .select("id")
             .execute()
         )
         if not response.data:
