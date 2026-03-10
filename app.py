@@ -166,6 +166,7 @@ const supabaseClient = window.supabase && SUPABASE_URL && SUPABASE_ANON_KEY
       }
     })
   : null;
+let currentSession = null;
 
 function missingConfigMessage() {
   if (MISSING_PUBLIC_CONFIG.length) {
@@ -206,8 +207,8 @@ function setAuthUi(user) {
 }
 
 async function getToken() {
-  const { data } = await requireSupabaseClient().auth.getSession();
-  return data.session?.access_token || null;
+  requireSupabaseClient();
+  return currentSession?.access_token || null;
 }
 
 async function apiGet(url) {
@@ -259,8 +260,7 @@ async function refreshAuthStatus() {
     return;
   }
 
-  const { data } = await supabaseClient.auth.getSession();
-  const user = data.session?.user;
+  const user = currentSession?.user || null;
   setAuthUi(user);
 
   document.getElementById("authStatus").textContent = user
@@ -327,8 +327,7 @@ async function login() {
     return;
   }
 
-  await refreshAuthStatus();
-  await loadDashboard();
+  document.getElementById("authStatus").textContent = "Anmeldung erfolgreich, Session wird geladen...";
 }
 
 async function loadDashboard() {
@@ -375,6 +374,7 @@ async function logout() {
   if (supabaseClient) {
     await supabaseClient.auth.signOut();
   }
+  currentSession = null;
   await refreshAuthStatus();
   setLoggedOutState();
 }
@@ -767,35 +767,33 @@ el("copyPromptBtn").addEventListener("click", async () => {
 });
 
 if (supabaseClient) {
-  supabaseClient.auth.onAuthStateChange(async (_event, session) => {
-    const user = session?.user;
+  supabaseClient.auth.onAuthStateChange((_event, session) => {
+    currentSession = session || null;
+    const user = currentSession?.user || null;
     setAuthUi(user);
     document.getElementById("authStatus").textContent = user
       ? `Eingeloggt als ${user.email}`
       : "Nicht eingeloggt";
 
-    if (session?.access_token) {
-      await loadDashboard();
-    } else {
-      setLoggedOutState();
-    }
+    window.setTimeout(async () => {
+      if (currentSession?.access_token) {
+        await loadDashboard();
+      } else {
+        setLoggedOutState();
+      }
+    }, 0);
   });
 }
 
 (async () => {
   setAuthUi(null);
-  await refreshAuthStatus();
   if (!supabaseClient) {
     clearDashboard();
     el("garminStatus").textContent = missingConfigMessage();
     return;
   }
-  const token = await getToken();
-  if (token) {
-    await loadDashboard();
-  } else {
-    setLoggedOutState();
-  }
+  document.getElementById("authStatus").textContent = "Pruefe Anmeldung...";
+  setLoggedOutState();
 })();
 </script>
 </body>
