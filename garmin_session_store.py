@@ -276,7 +276,6 @@ class GarminSessionStore:
                     .update({**fields, "garmin_session_version": next_version})
                     .eq("user_id", user_id)
                     .eq("garmin_session_version", version_to_match)
-                    .select(self._select_columns)
                     .execute()
                 )
             except Exception as exc:
