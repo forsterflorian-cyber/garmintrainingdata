@@ -143,14 +143,14 @@ HTML = """
 </div>
 <div id="garminBox" style="max-width:420px;margin:0 auto 24px auto;padding:20px;background:#151b2f;border:1px solid #2b3459;border-radius:16px;">
   <h2 style="margin-top:0;">Garmin verbinden</h2>
-  <input id="garminEmail" type="email" placeholder="Garmin E-Mail" style="width:100%;margin-bottom:10px;padding:10px;border-radius:10px;border:1px solid #2b3459;background:#0d1326;color:#ecf1ff;">
-  <input id="garminPassword" type="password" placeholder="Garmin Passwort" style="width:100%;margin-bottom:10px;padding:10px;border-radius:10px;border:1px solid #2b3459;background:#0d1326;color:#ecf1ff;">
+  <input id="garminEmail" type="email" placeholder="Garmin E-Mail" disabled style="width:100%;margin-bottom:10px;padding:10px;border-radius:10px;border:1px solid #2b3459;background:#0d1326;color:#ecf1ff;">
+  <input id="garminPassword" type="password" placeholder="Garmin Passwort" disabled style="width:100%;margin-bottom:10px;padding:10px;border-radius:10px;border:1px solid #2b3459;background:#0d1326;color:#ecf1ff;">
   <div style="display:flex;gap:10px;">
-    <button id="connectGarminBtn" onclick="connectGarmin()">Garmin speichern</button>
-    <button id="updateBtn" onclick="updateData()">Daten aktualisieren</button>
-    <button id="backfillBtn" onclick="backfillData()">Backfill 28 Tage</button>
+    <button id="connectGarminBtn" onclick="connectGarmin()" disabled>Garmin speichern</button>
+    <button id="updateBtn" onclick="updateData()" disabled>Daten aktualisieren</button>
+    <button id="backfillBtn" onclick="backfillData()" disabled>Backfill 28 Tage</button>
   </div>
-  <div id="garminStatus" style="margin-top:10px;color:#a8b3d1;">Garmin nicht verbunden</div>
+  <div id="garminStatus" style="margin-top:10px;color:#a8b3d1;">Bitte zuerst einloggen, um Garmin zu verbinden.</div>
 </div>
 <script>
 const SUPABASE_URL = "{{ supabase_url }}";
@@ -367,7 +367,7 @@ async function signup() {
     return;
   }
 
-  alert(`Registrierung gestartet. Je nach Supabase-Einstellung musst du evtl. deine E-Mail bestätigen. Der Bestätigungslink soll auf ${authRedirectUrl()} zurückkommen.`);
+  alert(`Registrierung gestartet. Je nach Supabase-Einstellung musst du evtl. deine E-Mail bestätigen. Der Bestätigungslink soll auf ${authRedirectUrl()} zurückkommen. Wenn du danach nicht automatisch eingeloggt bist, melde dich hier manuell an.`);
   await refreshAuthStatus();
 }
 
