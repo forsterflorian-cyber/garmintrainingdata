@@ -80,7 +80,7 @@ class SyncStatusService:
         now_iso = utc_now_iso()
         expires_iso = utc_in_seconds_iso(lock_ttl_seconds)
         version = int(status.get("lock_version") or 0)
-        
+        print("DEBUG: Executing try_acquire_lock with new method order")
         response = (
             self._supabase.table(SYNC_STATUS_TABLE)
             .update(
