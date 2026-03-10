@@ -132,7 +132,6 @@ HTML = """
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
-<button onclick="updateData()">Daten aktualisieren</button>
 <div id="authBox" style="max-width:420px;margin:24px auto;padding:20px;background:#151b2f;border:1px solid #2b3459;border-radius:16px;">
   <h2 style="margin-top:0;">Login</h2>
   <input id="loginEmail" type="email" placeholder="E-Mail" style="width:100%;margin-bottom:10px;padding:10px;border-radius:10px;border:1px solid #2b3459;background:#0d1326;color:#ecf1ff;">
@@ -144,9 +143,20 @@ HTML = """
   </div>
   <div id="authStatus" style="margin-top:10px;color:#a8b3d1;">Nicht eingeloggt</div>
 </div>
+<div id="garminBox" style="max-width:420px;margin:0 auto 24px auto;padding:20px;background:#151b2f;border:1px solid #2b3459;border-radius:16px;">
+  <h2 style="margin-top:0;">Garmin verbinden</h2>
+  <input id="garminEmail" type="email" placeholder="Garmin E-Mail" style="width:100%;margin-bottom:10px;padding:10px;border-radius:10px;border:1px solid #2b3459;background:#0d1326;color:#ecf1ff;">
+  <input id="garminPassword" type="password" placeholder="Garmin Passwort" style="width:100%;margin-bottom:10px;padding:10px;border-radius:10px;border:1px solid #2b3459;background:#0d1326;color:#ecf1ff;">
+  <div style="display:flex;gap:10px;">
+    <button onclick="connectGarmin()">Garmin speichern</button>
+    <button onclick="updateData()">Daten aktualisieren</button>
+    <button onclick="backfillData()">Backfill 28 Tage</button>
+  </div>
+  <div id="garminStatus" style="margin-top:10px;color:#a8b3d1;">Garmin nicht verbunden</div>
+</div>
 <script>
-const SUPABASE_URL = "SUPABASE_URL";
-const SUPABASE_ANON_KEY = "SUPABASE_KEY";
+const SUPABASE_URL = "{{ supabase_url }}";
+const SUPABASE_ANON_KEY = "{{ supabase_anon_key }}";
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -157,9 +167,11 @@ async function getToken() {
 
 async function apiGet(url) {
   const token = await getToken();
-
+  if (!token) {
+    throw new Error("Bitte zuerst einloggen.");
+  }
   const res = await fetch(url, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {}
+    headers: { Authorization: `Bearer ${token}` }
   });
 
   const json = await res.json().catch(() => ({}));
@@ -173,11 +185,14 @@ async function apiGet(url) {
 
 async function apiPost(url, body = null) {
   const token = await getToken();
+  if (!token) {
+    throw new Error("Bitte zuerst einloggen.");
+  }
 
   const res = await fetch(url, {
     method: "POST",
     headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json"
     },
     body: body ? JSON.stringify(body) : null
@@ -220,9 +235,14 @@ async function loadDashboard() {
   try {
     const data = await apiGet("/api/dashboard");
     render(data);
+    document.getElementById("garminStatus").textContent = "Dashboard geladen.";
   } catch (e) {
     console.error(e);
-    document.getElementById("authStatus").textContent = `Fehler: ${e.message}`;
+     if (e.message.includes("einloggen")) {
+      document.getElementById("garminStatus").textContent = "Bitte einloggen, um Daten zu sehen.";
+      return;
+    }
+    document.getElementById("garminStatus").textContent = `Fehler: ${e.message}`;
   }
 }
 
@@ -251,8 +271,31 @@ async function updateData() {
   try {
     await apiPost("/api/update");
     await loadDashboard();
+    document.getElementById("garminStatus").textContent = "Update erfolgreich.";
   } catch (e) {
     alert(e.message);
+  }
+}
+
+async function connectGarmin() {
+  try {
+    const email = document.getElementById("garminEmail").value;
+    const password = document.getElementById("garminPassword").value;
+
+    await apiPost("/api/garmin/connect", { email, password });
+    document.getElementById("garminStatus").textContent = "Garmin Zugangsdaten gespeichert.";
+  } catch (e) {
+    document.getElementById("garminStatus").textContent = `Fehler: ${e.message}`;
+  }
+}
+
+async function backfillData() {
+  try {
+    await apiPost("/api/backfill?days=28");
+    await loadDashboard();
+    document.getElementById("garminStatus").textContent = "Backfill erfolgreich.";
+  } catch (e) {
+    document.getElementById("garminStatus").textContent = `Fehler: ${e.message}`;
   }
 }
 
@@ -606,9 +649,23 @@ el("copyPromptBtn").addEventListener("click", async () => {
   }
 });
 
+supabaseClient.auth.onAuthStateChange(async (_event, session) => {
+  const user = session?.user;
+  document.getElementById("authStatus").textContent = user
+    ? `Eingeloggt als ${user.email}`
+    : "Nicht eingeloggt";
+
+  if (session?.access_token) {
+    await loadDashboard();
+  }
+});
+
 (async () => {
   await refreshAuthStatus();
-  await loadDashboard();
+  const token = await getToken();
+  if (token) {
+    await loadDashboard();
+  }
 })();
 </script>
 </body>
@@ -756,7 +813,7 @@ def dashboard():
 @require_user
 def api_ai_prompt():
     mode = _mode_or_default(request.args.get("mode", "hybrid"))
-    rows = _fetch_rows(request.user_id, limit=1)
+    rows = _fetch_rows(request.user_id, limit=365)
     latest_payload = rows[-1].get("data") if rows else None
     return jsonify({
         "mode": mode,
@@ -766,7 +823,11 @@ def api_ai_prompt():
 
 @app.route("/")
 def index():
-    return render_template_string(HTML)
+    return render_template_string(
+        HTML,
+        supabase_url=os.environ.get("SUPABASE_URL", ""),
+        supabase_anon_key=os.environ.get("SUPABASE_ANON_KEY", ""),
+    )
 
 
 @app.post("/api/update")
@@ -779,8 +840,7 @@ def update():
 
     email, password = creds
 
-    client = client = load_client(email=email,password=password,user_id=request.user_id,
-)
+    client = load_client(email=email, password=password, user_id=request.user_id)
 
     rows = _fetch_rows(request.user_id, limit=365)
     history = _history_from_rows(rows)
@@ -852,11 +912,14 @@ def backfill_data():
 @require_user
 def connect_garmin():
 
-    data = request.json
+    data = request.json or {}
 
-    email = data["email"]
-    password = data["password"]
-
+    email = (data.get("email") or "").strip()
+    password = data.get("password") or ""
+    
+    if not email or not password:
+        return {"error": "email and password are required"}, 400
+        
     email_enc = encrypt(email)
     pw_enc = encrypt(password)
 
@@ -866,13 +929,14 @@ def connect_garmin():
         "garmin_password_enc": pw_enc
     }).execute()
 
-    return {"status": "ok"}
+   }, on_conflict="user_id").execute()
     
 def get_garmin_credentials(user_id):
 
     res = supabase.table("user_garmin_accounts") \
-        .select("*") \
+        .sselect("garmin_email_enc,garmin_password_enc") \
         .eq("user_id", user_id) \
+        .limit(1) \
         .execute()
 
     if not res.data:
