@@ -129,29 +129,131 @@ HTML = """
       #unitsList { grid-template-columns: 1fr !important; }
     }
   </style>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
 <button onclick="updateData()">Daten aktualisieren</button>
-
+<div id="authBox" style="max-width:420px;margin:24px auto;padding:20px;background:#151b2f;border:1px solid #2b3459;border-radius:16px;">
+  <h2 style="margin-top:0;">Login</h2>
+  <input id="loginEmail" type="email" placeholder="E-Mail" style="width:100%;margin-bottom:10px;padding:10px;border-radius:10px;border:1px solid #2b3459;background:#0d1326;color:#ecf1ff;">
+  <input id="loginPassword" type="password" placeholder="Passwort" style="width:100%;margin-bottom:10px;padding:10px;border-radius:10px;border:1px solid #2b3459;background:#0d1326;color:#ecf1ff;">
+  <div style="display:flex;gap:10px;">
+    <button onclick="login()">Login</button>
+    <button onclick="signup()">Registrieren</button>
+    <button onclick="logout()">Logout</button>
+  </div>
+  <div id="authStatus" style="margin-top:10px;color:#a8b3d1;">Nicht eingeloggt</div>
+</div>
 <script>
-async function updateData() {
-  const session = await supabase.auth.getSession();
-  const token = session.data.session?.access_token;
+const SUPABASE_URL = "SUPABASE_URL";
+const SUPABASE_ANON_KEY = "SUPABASE_KEY";
 
-  const res = await fetch("/api/update", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${token}`
-    }
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+async function getToken() {
+  const { data } = await supabaseClient.auth.getSession();
+  return data.session?.access_token || null;
+}
+
+async function apiGet(url) {
+  const token = await getToken();
+
+  const res = await fetch(url, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {}
   });
 
+  const json = await res.json().catch(() => ({}));
+
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    alert(err.error || "Update fehlgeschlagen");
+    throw new Error(json.error || `HTTP ${res.status}`);
+  }
+
+  return json;
+}
+
+async function apiPost(url, body = null) {
+  const token = await getToken();
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      "Content-Type": "application/json"
+    },
+    body: body ? JSON.stringify(body) : null
+  });
+
+  const json = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    throw new Error(json.error || `HTTP ${res.status}`);
+  }
+
+  return json;
+}
+
+async function refreshAuthStatus() {
+  const { data } = await supabaseClient.auth.getSession();
+  const user = data.session?.user;
+
+  document.getElementById("authStatus").textContent = user
+    ? `Eingeloggt als ${user.email}`
+    : "Nicht eingeloggt";
+}
+
+async function login() {
+  const email = document.getElementById("loginEmail").value;
+  const password = document.getElementById("loginPassword").value;
+
+  const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+
+  if (error) {
+    alert(error.message);
     return;
   }
 
+  await refreshAuthStatus();
+  await loadDashboard();
+}
+
+async function loadDashboard() {
+  try {
+    const data = await apiGet("/api/dashboard");
+    render(data);
+  } catch (e) {
+    console.error(e);
+    document.getElementById("authStatus").textContent = `Fehler: ${e.message}`;
+  }
+}
+
+async function signup() {
+  const email = document.getElementById("loginEmail").value;
+  const password = document.getElementById("loginPassword").value;
+
+  const { error } = await supabaseClient.auth.signUp({ email, password });
+
+  if (error) {
+    alert(error.message);
+    return;
+  }
+
+  alert("Registrierung gestartet. Je nach Supabase-Einstellung musst du evtl. deine E-Mail bestätigen.");
+  await refreshAuthStatus();
+}
+
+async function logout() {
+  await supabaseClient.auth.signOut();
+  await refreshAuthStatus();
   location.reload();
+}
+
+async function updateData() {
+  try {
+    await apiPost("/api/update");
+    await loadDashboard();
+  } catch (e) {
+    alert(e.message);
+  }
 }
 
 </script>
@@ -396,15 +498,17 @@ function modeUnits(item, mode) {
   return item.units_hybrid || [];
 }
 
-function updatePrompt() {
+async function updatePrompt() {
   if (!dashboardData || !dashboardData.latest) return;
   const mode = el("modeSelect").value;
-  fetch(`/api/ai-prompt?mode=${encodeURIComponent(mode)}`)
-    .then(r => r.json())
-    .then(data => {
-      el("aiPrompt").value = data.prompt || "";
-      el("todayRec").textContent = modeRecommendation(dashboardData.latest, mode) || "-";
-    });
+
+  try {
+    const data = await apiGet(`/api/ai-prompt?mode=${encodeURIComponent(mode)}`);
+    el("aiPrompt").value = data.prompt || "";
+    el("todayRec").textContent = modeRecommendation(dashboardData.latest, mode) || "-";
+  } catch (e) {
+    el("aiPrompt").value = `Fehler: ${e.message}`;
+  }
 }
 
 function render(data) {
@@ -502,24 +606,10 @@ el("copyPromptBtn").addEventListener("click", async () => {
   }
 });
 
-async function apiGet(url) {
-  const session = await supabase.auth.getSession();
-  const token = session.data.session?.access_token;
-
-  const res = await fetch(url, {
-    headers: {
-      "Authorization": `Bearer ${token}`
-    }
-  });
-
-  return res.json();
-}
-  .then(r => r.json())
-apiGet(`/api/ai-prompt?mode=${encodeURIComponent(mode)}`)
-  .then(data => {
-    el("aiPrompt").value = data.prompt || "";
-    el("todayRec").textContent = modeRecommendation(dashboardData.latest, mode) || "-";
-  });
+(async () => {
+  await refreshAuthStatus();
+  await loadDashboard();
+})();
 </script>
 </body>
 </html>
