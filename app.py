@@ -135,9 +135,9 @@ HTML = """
   <input id="loginEmail" type="email" placeholder="E-Mail" style="width:100%;margin-bottom:10px;padding:10px;border-radius:10px;border:1px solid #2b3459;background:#0d1326;color:#ecf1ff;">
   <input id="loginPassword" type="password" placeholder="Passwort" style="width:100%;margin-bottom:10px;padding:10px;border-radius:10px;border:1px solid #2b3459;background:#0d1326;color:#ecf1ff;">
   <div style="display:flex;gap:10px;">
-    <button onclick="login()">Login</button>
-    <button onclick="signup()">Registrieren</button>
-    <button onclick="logout()">Logout</button>
+    <button id="loginBtn" onclick="login()">Login</button>
+    <button id="signupBtn" onclick="signup()">Registrieren</button>
+    <button id="logoutBtn" onclick="logout()" style="display:none;">Logout</button>
   </div>
   <div id="authStatus" style="margin-top:10px;color:#a8b3d1;">Nicht eingeloggt</div>
 </div>
@@ -146,25 +146,63 @@ HTML = """
   <input id="garminEmail" type="email" placeholder="Garmin E-Mail" style="width:100%;margin-bottom:10px;padding:10px;border-radius:10px;border:1px solid #2b3459;background:#0d1326;color:#ecf1ff;">
   <input id="garminPassword" type="password" placeholder="Garmin Passwort" style="width:100%;margin-bottom:10px;padding:10px;border-radius:10px;border:1px solid #2b3459;background:#0d1326;color:#ecf1ff;">
   <div style="display:flex;gap:10px;">
-    <button onclick="connectGarmin()">Garmin speichern</button>
-    <button onclick="updateData()">Daten aktualisieren</button>
-    <button onclick="backfillData()">Backfill 28 Tage</button>
+    <button id="connectGarminBtn" onclick="connectGarmin()">Garmin speichern</button>
+    <button id="updateBtn" onclick="updateData()">Daten aktualisieren</button>
+    <button id="backfillBtn" onclick="backfillData()">Backfill 28 Tage</button>
   </div>
   <div id="garminStatus" style="margin-top:10px;color:#a8b3d1;">Garmin nicht verbunden</div>
 </div>
 <script>
 const SUPABASE_URL = "{{ supabase_url }}";
 const SUPABASE_ANON_KEY = "{{ supabase_anon_key }}";
+const MISSING_PUBLIC_CONFIG = {{ missing_public_config | tojson }};
 
 const supabaseClient = window.supabase && SUPABASE_URL && SUPABASE_ANON_KEY
-  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: {
+        detectSessionInUrl: true,
+        persistSession: true,
+        autoRefreshToken: true
+      }
+    })
   : null;
+
+function missingConfigMessage() {
+  if (MISSING_PUBLIC_CONFIG.length) {
+    return `Supabase-Konfiguration fehlt: ${MISSING_PUBLIC_CONFIG.join(", ")}`;
+  }
+  return "Supabase-Konfiguration fehlt.";
+}
 
 function requireSupabaseClient() {
   if (!supabaseClient) {
-    throw new Error("Supabase-Konfiguration fehlt.");
+    throw new Error(missingConfigMessage());
   }
   return supabaseClient;
+}
+
+function authRedirectUrl() {
+  const url = new URL(window.location.href);
+  url.hash = "";
+  url.search = "";
+  return url.toString();
+}
+
+function setControlsDisabled(disabled) {
+  ["garminEmail", "garminPassword", "connectGarminBtn", "updateBtn", "backfillBtn"].forEach((id) => {
+    const node = el(id);
+    if (node) node.disabled = disabled;
+  });
+}
+
+function setAuthUi(user) {
+  const loggedIn = !!user;
+  el("loginEmail").style.display = loggedIn ? "none" : "block";
+  el("loginPassword").style.display = loggedIn ? "none" : "block";
+  el("loginBtn").style.display = loggedIn ? "none" : "inline-block";
+  el("signupBtn").style.display = loggedIn ? "none" : "inline-block";
+  el("logoutBtn").style.display = loggedIn ? "inline-block" : "none";
+  setControlsDisabled(!loggedIn);
 }
 
 async function getToken() {
@@ -216,12 +254,14 @@ async function apiPost(url, body = null) {
 
 async function refreshAuthStatus() {
   if (!supabaseClient) {
-    document.getElementById("authStatus").textContent = "Supabase-Konfiguration fehlt.";
+    document.getElementById("authStatus").textContent = missingConfigMessage();
+    setAuthUi(null);
     return;
   }
 
   const { data } = await supabaseClient.auth.getSession();
   const user = data.session?.user;
+  setAuthUi(user);
 
   document.getElementById("authStatus").textContent = user
     ? `Eingeloggt als ${user.email}`
@@ -314,14 +354,20 @@ async function signup() {
   const email = document.getElementById("loginEmail").value;
   const password = document.getElementById("loginPassword").value;
 
-  const { error } = await requireSupabaseClient().auth.signUp({ email, password });
+  const { error } = await requireSupabaseClient().auth.signUp({
+    email,
+    password,
+    options: {
+      emailRedirectTo: authRedirectUrl()
+    }
+  });
 
   if (error) {
     alert(error.message);
     return;
   }
 
-  alert("Registrierung gestartet. Je nach Supabase-Einstellung musst du evtl. deine E-Mail bestätigen.");
+  alert(`Registrierung gestartet. Je nach Supabase-Einstellung musst du evtl. deine E-Mail bestätigen. Der Bestätigungslink soll auf ${authRedirectUrl()} zurückkommen.`);
   await refreshAuthStatus();
 }
 
@@ -347,6 +393,11 @@ async function connectGarmin() {
   try {
     const email = document.getElementById("garminEmail").value;
     const password = document.getElementById("garminPassword").value;
+
+    if (!email || !password) {
+      document.getElementById("garminStatus").textContent = "Bitte Garmin E-Mail und Passwort eingeben.";
+      return;
+    }
 
     await apiPost("/api/garmin/connect", { email, password });
     document.getElementById("garminStatus").textContent = "Garmin Zugangsdaten gespeichert.";
@@ -718,6 +769,7 @@ el("copyPromptBtn").addEventListener("click", async () => {
 if (supabaseClient) {
   supabaseClient.auth.onAuthStateChange(async (_event, session) => {
     const user = session?.user;
+    setAuthUi(user);
     document.getElementById("authStatus").textContent = user
       ? `Eingeloggt als ${user.email}`
       : "Nicht eingeloggt";
@@ -731,10 +783,11 @@ if (supabaseClient) {
 }
 
 (async () => {
+  setAuthUi(null);
   await refreshAuthStatus();
   if (!supabaseClient) {
     clearDashboard();
-    el("garminStatus").textContent = "Supabase-Konfiguration fehlt.";
+    el("garminStatus").textContent = missingConfigMessage();
     return;
   }
   const token = await getToken();
@@ -913,6 +966,15 @@ def _parse_backfill_days(raw_value: str) -> int:
     return max(1, min(days, 180))
 
 
+def _missing_public_config() -> List[str]:
+    missing: List[str] = []
+    if not os.environ.get("SUPABASE_URL"):
+        missing.append("SUPABASE_URL")
+    if not os.environ.get("SUPABASE_ANON_KEY"):
+        missing.append("SUPABASE_ANON_KEY")
+    return missing
+
+
 @app.get("/api/history")
 @require_user
 def api_history():
@@ -951,6 +1013,7 @@ def index():
         HTML,
         supabase_url=os.environ.get("SUPABASE_URL", ""),
         supabase_anon_key=os.environ.get("SUPABASE_ANON_KEY", ""),
+        missing_public_config=_missing_public_config(),
     )
 
 
