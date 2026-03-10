@@ -26,6 +26,7 @@ import json
 import os
 import statistics
 import sys
+import hashlib
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -89,12 +90,12 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def load_client() -> Garmin:
-    tokens_path = Path(DEFAULT_TOKENS_PATH)
-    tokens_path.parent.mkdir(parents=True, exist_ok=True)
+def load_client(email: str, password: str, user_id: str) -> Garmin:
+    base_dir = Path(os.getenv("GARMIN_TOKENS_DIR", "/tmp/garmin_tokens"))
+    safe_user = hashlib.sha256(user_id.encode()).hexdigest()[:24]
+    tokens_path = base_dir / safe_user / "garmin_tokens"
 
-    email = os.getenv("GARMIN_EMAIL", "")
-    password = os.getenv("GARMIN_PASSWORD", "")
+    tokens_path.parent.mkdir(parents=True, exist_ok=True)
 
     if tokens_path.exists():
         try:
@@ -105,7 +106,7 @@ def load_client() -> Garmin:
             pass
 
     if not email or not password:
-        raise RuntimeError("No valid Garmin tokens found and GARMIN_EMAIL / GARMIN_PASSWORD are not set.")
+        raise RuntimeError("No valid Garmin tokens found and Garmin credentials are missing.")
 
     client = Garmin(email=email, password=password)
     client.login()

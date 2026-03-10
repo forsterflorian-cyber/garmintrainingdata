@@ -134,20 +134,30 @@ HTML = """
 <button onclick="updateData()">Daten aktualisieren</button>
 
 <script>
-async function updateData(){
-  await fetch("/api/update")
-  location.reload()
+async function updateData() {
+  const session = await supabase.auth.getSession();
+  const token = session.data.session?.access_token;
+
+  const res = await fetch("/api/update", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${token}`
+    }
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    alert(err.error || "Update fehlgeschlagen");
+    return;
+  }
+
+  location.reload();
 }
-const { data, error } = await supabase.auth.signInWithPassword({
-  email,
-  password
-})
-const session = await supabase.auth.getSession()
-const token = session.data.session.access_token
+
 </script>
   <div class="wrap">
     <h1>Garmin Training Dashboard</h1>
-    <div class="sub">Readiness, 7d/28d Load, konkrete Einheiten und KI-Prompt aus deiner training_history.json</div>
+<div class="sub">Readiness, 7d/28d Load, konkrete Einheiten und KI-Prompt aus Supabase</div>
 
     <div class="grid">
       <div class="card span-3">
@@ -492,9 +502,24 @@ el("copyPromptBtn").addEventListener("click", async () => {
   }
 });
 
-fetch("/api/dashboard")
+async function apiGet(url) {
+  const session = await supabase.auth.getSession();
+  const token = session.data.session?.access_token;
+
+  const res = await fetch(url, {
+    headers: {
+      "Authorization": `Bearer ${token}`
+    }
+  });
+
+  return res.json();
+}
   .then(r => r.json())
-  .then(render);
+apiGet(`/api/ai-prompt?mode=${encodeURIComponent(mode)}`)
+  .then(data => {
+    el("aiPrompt").value = data.prompt || "";
+    el("todayRec").textContent = modeRecommendation(dashboardData.latest, mode) || "-";
+  });
 </script>
 </body>
 </html>
@@ -505,10 +530,11 @@ def _mode_or_default(value: Optional[str]) -> str:
     return value if value in {"hybrid", "run", "bike", "strength"} else "hybrid"
 
 
-def _fetch_rows(limit: int = 120) -> List[Dict[str, Any]]:
+def _fetch_rows(user_id: str, limit: int = 120) -> List[Dict[str, Any]]:
     res = (
         supabase.table("training_days")
-        .select("date,data")
+        .select("user_id,date,data")
+        .eq("user_id", user_id)
         .order("date", desc=False)
         .limit(limit)
         .execute()
@@ -601,46 +627,51 @@ def _build_prompt_from_payload(payload: Optional[Dict[str, Any]], mode: str) -> 
     )
 
 
-def _upsert_payload(payload: Dict[str, Any]) -> None:
+def _upsert_payload(user_id: str, payload: Dict[str, Any]) -> None:
     (
         supabase.table("training_days")
-        .upsert({"date": payload["date"], "data": payload}, on_conflict="date")
+        .upsert(
+            {
+                "user_id": user_id,
+                "date": payload["date"],
+                "data": payload,
+            },
+            on_conflict="user_id,date",
+        )
         .execute()
     )
 
 
 @app.route("/api/history")
+@require_user
 def api_history():
-    rows = list(reversed(_fetch_rows(limit=30)))
+    rows = list(reversed(_fetch_rows(request.user_id, limit=30)))
     return {"rows": rows}
 
 
 @app.get("/api/dashboard")
 @require_user
 def dashboard():
-
-    res = supabase.table("training_days") \
-        .select("*") \
-        .eq("user_id", request.user_id) \
-        .order("date") \
-        .execute()
-
-    rows = res.data
-
-    latest = rows[-1]["data"] if rows else None
+    rows = _fetch_rows(request.user_id, limit=365)
+    series = _build_series(rows)
+    latest = series[-1] if series else None
 
     return {
         "latest": latest,
-        "series": rows
+        "series": series,
     }
 
 
 @app.route("/api/ai-prompt")
+@require_user
 def api_ai_prompt():
     mode = _mode_or_default(request.args.get("mode", "hybrid"))
-    rows = _fetch_rows(limit=1)
+    rows = _fetch_rows(request.user_id, limit=1)
     latest_payload = rows[-1].get("data") if rows else None
-    return jsonify({"mode": mode, "prompt": _build_prompt_from_payload(latest_payload, mode)})
+    return jsonify({
+        "mode": mode,
+        "prompt": _build_prompt_from_payload(latest_payload, mode)
+    })
 
 
 @app.route("/")
@@ -651,7 +682,6 @@ def index():
 @app.post("/api/update")
 @require_user
 def update():
-
     creds = get_garmin_credentials(request.user_id)
 
     if not creds:
@@ -659,33 +689,51 @@ def update():
 
     email, password = creds
 
-    client = Garmin(email, password)
-    client.login()
+    client = client = load_client(email=email,password=password,user_id=request.user_id,
+)
 
-    report = main_logic()
+    rows = _fetch_rows(request.user_id, limit=365)
+    history = _history_from_rows(rows)
+    recent_activities = get_recent_activities(client, 400)
 
-    supabase.table("training_days").upsert({
-        "user_id": request.user_id,
-        "date": report["date"],
-        "data": report
-    }).execute()
+    today = date.today().isoformat()
 
-    return {"status": "ok"}
+    payload = main_logic_for_day(
+        day=today,
+        mode="hybrid",
+        history=history,
+        client=client,
+        recent_activities=recent_activities,
+        persist_history=False,
+    )
+
+    _upsert_payload(request.user_id, payload)
+
+    return {"status": "ok", "date": payload["date"]}
 
 
-@app.route("/api/backfill")
+@app.route("/api/backfill", methods=["POST"])
+@require_user
 def backfill_data():
     days = int(request.args.get("days", "28"))
     days = max(1, min(days, 180))
 
-    rows = _fetch_rows(limit=365)
+    creds = get_garmin_credentials(request.user_id)
+    if not creds:
+        return {"error": "garmin not connected"}, 400
+
+    email, password = creds
+    client = load_client(email=email, password=password,user_id=request.user_id,)
+
+    rows = _fetch_rows(request.user_id, limit=365)
     history = _history_from_rows(rows)
-    client = load_client()
     recent_activities = get_recent_activities(client, 400)
 
     results: List[str] = []
+
     for offset in range(days - 1, -1, -1):
         day = (date.today() - timedelta(days=offset)).isoformat()
+
         payload = main_logic_for_day(
             day=day,
             mode="hybrid",
@@ -694,7 +742,14 @@ def backfill_data():
             recent_activities=recent_activities,
             persist_history=False,
         )
-        _upsert_payload(payload)
+
+        _upsert_payload(request.user_id, payload)
+
+        history["days"][day] = {
+            "morning": payload.get("morning"),
+            "summary": payload.get("summary") or {},
+        }
+
         results.append(day)
 
     return {
