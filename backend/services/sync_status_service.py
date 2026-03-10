@@ -25,6 +25,7 @@ class SyncStatusService:
                     "user_id": user_id,
                     "sync_state": "never_synced",
                     "updated_at": now_iso,
+                    "lock_version": 0,
                 },
                 on_conflict="user_id",
             )
@@ -56,8 +57,8 @@ class SyncStatusService:
         response = (
             self._supabase.table(SYNC_STATUS_TABLE)
             .update(payload)
-            .eq("user_id", user_id)
             .select("*")
+            .eq("user_id", user_id)
             .execute()
         )
         return response.data[0] if response.data else self.ensure_status(user_id)
@@ -79,6 +80,7 @@ class SyncStatusService:
         now_iso = utc_now_iso()
         expires_iso = utc_in_seconds_iso(lock_ttl_seconds)
         version = int(status.get("lock_version") or 0)
+        
         response = (
             self._supabase.table(SYNC_STATUS_TABLE)
             .update(
@@ -95,9 +97,9 @@ class SyncStatusService:
                     "updated_at": now_iso,
                 }
             )
+            .select("*")
             .eq("user_id", user_id)
             .eq("lock_version", version)
-            .select("*")
             .execute()
         )
         if response.data:
@@ -113,9 +115,9 @@ class SyncStatusService:
                     "updated_at": utc_now_iso(),
                 }
             )
+            .select("*")
             .eq("user_id", user_id)
             .eq("lock_token", lock_token)
-            .select("*")
             .execute()
         )
         return response.data[0] if response.data else None
@@ -134,9 +136,9 @@ class SyncStatusService:
         response = (
             self._supabase.table(SYNC_STATUS_TABLE)
             .update(payload)
+            .select("*")
             .eq("user_id", user_id)
             .eq("lock_token", lock_token)
-            .select("*")
             .execute()
         )
         return response.data[0] if response.data else self.ensure_status(user_id)
@@ -193,8 +195,11 @@ def is_lock_active(status: Optional[Dict[str, Any]]) -> bool:
     if not status:
         return False
     token = status.get("lock_token")
-    expires_at = parse_iso(status.get("lock_expires_at"))
-    if not token or not expires_at:
+    expires_at_raw = status.get("lock_expires_at")
+    if not token or not expires_at_raw:
+        return False
+    expires_at = parse_iso(expires_at_raw)
+    if not expires_at:
         return False
     return expires_at > datetime.now(timezone.utc)
 
