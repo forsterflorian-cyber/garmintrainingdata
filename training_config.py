@@ -32,6 +32,24 @@ class ReadinessConfig:
             "respiration": False,
             "sleep_h": True,
         }
+        )
+
+
+@dataclass(frozen=True)
+class DecisionConfig:
+    quality_min: float = 0.5
+    moderate_min: float = -0.3
+    easy_min: float = -0.8
+    high_risk_ratio_min: float = 1.5
+    high_risk_readiness_max: int = 30
+    weights: Mapping[str, float] = field(
+        default_factory=lambda: {
+            "hrv": 0.35,
+            "resting_hr": 0.25,
+            "sleep_h": 0.20,
+            "respiration": 0.10,
+            "load": 0.10,
+        }
     )
 
 
@@ -78,6 +96,7 @@ class FlagThresholdConfig:
 class TrainingConfig:
     windows: WindowConfig = field(default_factory=WindowConfig)
     readiness: ReadinessConfig = field(default_factory=ReadinessConfig)
+    decision: DecisionConfig = field(default_factory=DecisionConfig)
     ratio: RatioConfig = field(default_factory=RatioConfig)
     stress: StressConfig = field(default_factory=StressConfig)
     alerts: MorningAlertConfig = field(default_factory=MorningAlertConfig)

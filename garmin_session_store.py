@@ -10,6 +10,11 @@ from observability import ErrorCategory, ServiceError, get_logger, log_event, lo
 
 
 TABLE_NAME = "user_garmin_accounts"
+SESSION_COLUMNS = (
+    "garmin_session_enc",
+    "garmin_session_version",
+    "garmin_session_updated_at",
+)
 
 
 @dataclass
@@ -78,36 +83,56 @@ class GarminSessionStore:
         "user_id,garmin_email_enc,garmin_password_enc,garmin_session_enc,"
         "garmin_session_version,sync_status,sync_error,last_sync_at,garmin_session_updated_at"
     )
+    _legacy_select_columns = "user_id,garmin_email_enc,garmin_password_enc,sync_status,sync_error,last_sync_at"
 
     def __init__(self, supabase_client: Any):
         self._supabase = supabase_client
         self._logger = get_logger(__name__)
+        self._session_columns_available: Optional[bool] = None
 
     def fetch_account(self, user_id: str) -> Optional[GarminAccount]:
         try:
-            response = (
-                self._supabase.table(TABLE_NAME)
-                .select(self._select_columns)
-                .eq("user_id", user_id)
-                .limit(1)
-                .execute()
+            response = self._fetch_account_response(
+                user_id,
+                include_session_columns=self._session_columns_available is not False,
             )
         except Exception as exc:
-            log_exception(
-                self._logger,
-                category=ErrorCategory.DB,
-                event="garmin.account_fetch_failed",
-                message="Failed to fetch Garmin account.",
-                exc=exc,
-                user_id=user_id,
-            )
-            raise ServiceError(
-                "Failed to load Garmin account.",
-                status_code=500,
-                category=ErrorCategory.DB,
-                event="garmin.account_fetch_failed",
-                context={"user_id": user_id},
-            ) from exc
+            if self._is_missing_session_column_error(exc):
+                self._mark_session_columns_unavailable(user_id, exc)
+                try:
+                    response = self._fetch_account_response(user_id, include_session_columns=False)
+                except Exception as fallback_exc:
+                    log_exception(
+                        self._logger,
+                        category=ErrorCategory.DB,
+                        event="garmin.account_fetch_failed",
+                        message="Failed to fetch Garmin account.",
+                        exc=fallback_exc,
+                        user_id=user_id,
+                    )
+                    raise ServiceError(
+                        "Failed to load Garmin account.",
+                        status_code=500,
+                        category=ErrorCategory.DB,
+                        event="garmin.account_fetch_failed",
+                        context={"user_id": user_id},
+                    ) from fallback_exc
+            else:
+                log_exception(
+                    self._logger,
+                    category=ErrorCategory.DB,
+                    event="garmin.account_fetch_failed",
+                    message="Failed to fetch Garmin account.",
+                    exc=exc,
+                    user_id=user_id,
+                )
+                raise ServiceError(
+                    "Failed to load Garmin account.",
+                    status_code=500,
+                    category=ErrorCategory.DB,
+                    event="garmin.account_fetch_failed",
+                    context={"user_id": user_id},
+                ) from exc
 
         if not response.data:
             return None
@@ -201,6 +226,9 @@ class GarminSessionStore:
 
         for attempt in range(1, max_retries + 1):
             account = self.fetch_account(user_id)
+            if self._session_columns_available is False:
+                return self._write_legacy_account(user_id, fields, existing_account=account)
+
             if account is None:
                 try:
                     (
@@ -290,6 +318,80 @@ class GarminSessionStore:
             category=ErrorCategory.DB,
             event="garmin.account_conflict",
             context={"user_id": user_id},
+        )
+
+    def _fetch_account_response(self, user_id: str, *, include_session_columns: bool):
+        columns = self._select_columns if include_session_columns else self._legacy_select_columns
+        return (
+            self._supabase.table(TABLE_NAME)
+            .select(columns)
+            .eq("user_id", user_id)
+            .limit(1)
+            .execute()
+        )
+
+    def _write_legacy_account(
+        self,
+        user_id: str,
+        fields: Dict[str, Any],
+        *,
+        existing_account: Optional[GarminAccount] = None,
+    ) -> GarminAccount:
+        legacy_fields = {key: value for key, value in fields.items() if key not in SESSION_COLUMNS}
+        if not legacy_fields:
+            return existing_account or self.fetch_account(user_id) or GarminAccount(user_id=user_id)
+
+        try:
+            (
+                self._supabase.table(TABLE_NAME)
+                .upsert({"user_id": user_id, **legacy_fields}, on_conflict="user_id")
+                .execute()
+            )
+        except Exception as exc:
+            log_exception(
+                self._logger,
+                category=ErrorCategory.DB,
+                event="garmin.account_insert_failed",
+                message="Failed to insert Garmin account.",
+                exc=exc,
+                user_id=user_id,
+            )
+            raise ServiceError(
+                "Failed to store Garmin account.",
+                status_code=500,
+                category=ErrorCategory.DB,
+                event="garmin.account_insert_failed",
+                context={"user_id": user_id},
+            ) from exc
+
+        return self.fetch_account(user_id) or GarminAccount(user_id=user_id, **legacy_fields)
+
+    def _is_missing_session_column_error(self, exc: Exception) -> bool:
+        message = " ".join(
+            [
+                str(getattr(exc, "message", "") or ""),
+                str(getattr(exc, "details", "") or ""),
+                str(exc),
+            ]
+        ).lower()
+        code = str(getattr(exc, "code", "") or "")
+        mentions_session_column = any(column in message for column in SESSION_COLUMNS)
+        missing_column = code == "42703" or ("column" in message and "does not exist" in message)
+        return mentions_session_column and missing_column
+
+    def _mark_session_columns_unavailable(self, user_id: str, exc: Exception) -> None:
+        if self._session_columns_available is False:
+            return
+
+        self._session_columns_available = False
+        log_event(
+            self._logger,
+            logging.WARNING,
+            category=ErrorCategory.DB,
+            event="garmin.session_columns_unavailable",
+            message="Garmin session columns missing; falling back to credential-only storage.",
+            user_id=user_id,
+            error_code=str(getattr(exc, "code", "") or ""),
         )
 
     @staticmethod

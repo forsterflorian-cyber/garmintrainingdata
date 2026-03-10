@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Garmin Relative Dashboard</title>
+  <title>Training Decision Dashboard</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
@@ -18,24 +18,322 @@
       defaultRangeDays: {{ default_range_days | tojson }}
     };
   </script>
-  <script src="{{ url_for('static', filename='dashboard.js') }}" defer></script>
+  <script type="module" src="{{ url_for('static', filename='dashboard/main.js') }}"></script>
 </head>
 <body>
   <div class="page-shell">
     <header class="masthead">
       <div class="masthead-copy">
-        <p class="eyebrow">Relative Design Dashboard</p>
-        <h1>Garmin readiness in Beziehung zu deiner Baseline</h1>
+        <p class="eyebrow">Training Decision Dashboard</p>
+        <h1>What should you train today or tomorrow?</h1>
         <p class="subcopy">
-          Primare Signale liegen im Fokus. Trends, Lastverlauf und Detailmetriken bleiben darunter filterbar
-          und damit schnell lesbar.
+          The dashboard makes a training call first. Baseline deviations, load trends and raw Garmin details
+          stay available as evidence below.
         </p>
       </div>
-      <div class="status-pill">
-        <span class="status-dot"></span>
-        <span id="authStatus">Nicht eingeloggt</span>
+      <div class="utility-stack">
+        <div class="status-pill">
+          <span class="status-dot"></span>
+          <span id="authStatus">Nicht eingeloggt</span>
+        </div>
+        <div id="syncStatusBadge"></div>
       </div>
     </header>
+
+    <main class="dashboard-grid">
+      <section class="panel decision-panel span-12">
+        <div class="panel-head-space">
+          <div>
+            <p class="eyebrow">Training Decision</p>
+            <h2 id="decisionTargetDay">-</h2>
+            <p id="decisionTargetMeta" class="muted-copy">Noch kein Trainingstag geladen.</p>
+          </div>
+          <div class="toolbar">
+            <label class="toolbar-field">
+              <span>Zeitraum</span>
+              <select id="rangeSelect"></select>
+            </label>
+            <label class="toolbar-field">
+              <span>Modus</span>
+              <select id="modeSelect">
+                <option value="hybrid">Hybrid</option>
+                <option value="run">Run</option>
+                <option value="bike">Bike</option>
+                <option value="strength">Strength</option>
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <div class="decision-layout">
+          <article id="decisionHero" class="decision-hero" data-tone="neutral">
+            <div class="decision-level-row">
+              <div>
+                <p class="decision-label">Decision Level</p>
+                <div id="decisionLevel" class="decision-level">-</div>
+              </div>
+              <div class="decision-score-stack">
+                <div class="score-chip">
+                  <span>Deviation</span>
+                  <strong id="decisionScore">-</strong>
+                </div>
+                <div class="score-chip">
+                  <span>Readiness</span>
+                  <strong id="decisionReadiness">-</strong>
+                </div>
+              </div>
+            </div>
+            <p id="decisionSummary" class="decision-summary">Noch keine Entscheidung verfuegbar.</p>
+            <p id="decisionConclusion" class="decision-conclusion muted-copy">Die Empfehlung erscheint nach dem naechsten Sync.</p>
+            <div id="decisionStatusChips" class="decision-status-chips"></div>
+            <div class="decision-support">
+              <article class="support-chip">
+                <span>Current load</span>
+                <strong id="decisionLoadContext">-</strong>
+              </article>
+              <article class="support-chip">
+                <span>Sync</span>
+                <strong id="decisionSync">-</strong>
+              </article>
+            </div>
+          </article>
+
+          <div class="decision-side">
+            <article class="side-panel">
+              <div class="panel-head-space compact-head">
+                <div>
+                  <p class="eyebrow">Why this recommendation?</p>
+                  <h3>Decision drivers</h3>
+                </div>
+              </div>
+              <div id="decisionWhyList" class="why-list"></div>
+            </article>
+
+            <article id="forecastPanel" class="side-panel forecast-panel" data-tone="neutral">
+              <div class="panel-head-space compact-head">
+                <div>
+                  <p class="eyebrow">Tomorrow projection</p>
+                  <h3 id="forecastLevel">-</h3>
+                </div>
+              </div>
+              <p id="forecastText" class="muted-copy">Log a planned session to project tomorrow.</p>
+              <p id="forecastMeta" class="forecast-meta">-</p>
+            </article>
+
+            <article class="side-panel">
+              <div class="panel-head-space compact-head">
+                <div>
+                  <p class="eyebrow">Avoid today</p>
+                  <h3>Do not spend the day here</h3>
+                </div>
+              </div>
+              <div id="avoidTodayList" class="avoid-list"></div>
+            </article>
+
+            <article id="debugPanel" class="side-panel debug-panel" hidden>
+              <div class="panel-head-space compact-head">
+                <div>
+                  <p class="eyebrow">Debug</p>
+                  <h3>Decision trace</h3>
+                </div>
+              </div>
+              <div id="debugList" class="debug-list"></div>
+            </article>
+          </div>
+        </div>
+
+        <section class="decision-actions">
+          <div>
+            <p class="eyebrow">Log planned session</p>
+            <div id="plannedSessionButtons" class="button-row quick-plan-row"></div>
+          </div>
+          <p id="plannedSessionSelection" class="muted-copy">Noch keine Session fuer die Prognose gespeichert.</p>
+        </section>
+
+        <section>
+          <div class="panel-head-space compact-head">
+            <div>
+              <p class="eyebrow">Best Options Today</p>
+              <h3>Concrete sessions for the current decision</h3>
+            </div>
+            <p class="muted-copy">Duration, intensity and sport are shown directly on each option.</p>
+          </div>
+          <div id="decisionSessionGrid" class="decision-session-grid"></div>
+        </section>
+      </section>
+
+      <section class="panel span-7">
+        <div class="panel-head-space">
+          <div>
+            <p class="eyebrow">Baseline Comparison</p>
+            <h2>Today versus your normal</h2>
+          </div>
+          <div class="mini-summary">
+            <div>
+              <span>Avg Readiness</span>
+              <strong id="summaryAverageReadiness">-</strong>
+            </div>
+            <div>
+              <span>Avg Load</span>
+              <strong id="summaryAverageLoad">-</strong>
+            </div>
+          </div>
+        </div>
+        <div id="baselineMetricList" class="baseline-grid"></div>
+      </section>
+
+      <section class="panel span-5">
+        <div class="panel-head-space">
+          <div>
+            <p class="eyebrow">Coach Snapshot</p>
+            <h2>Context around the call</h2>
+          </div>
+        </div>
+        <div class="snapshot-grid">
+          <article class="snapshot-card">
+            <span>Focus day</span>
+            <strong id="snapshotFocusDate">-</strong>
+          </article>
+          <article class="snapshot-card">
+            <span>Recommendation window</span>
+            <strong id="snapshotWindow">-</strong>
+          </article>
+          <article class="snapshot-card">
+            <span>7d / 28d ratio</span>
+            <strong id="snapshotRatio">-</strong>
+          </article>
+          <article class="snapshot-card">
+            <span>Stress label</span>
+            <strong id="snapshotStress">-</strong>
+          </article>
+          <article class="snapshot-card">
+            <span>Sync status</span>
+            <strong id="snapshotSyncStatus">-</strong>
+          </article>
+          <article class="snapshot-card">
+            <span>Model recommendation</span>
+            <strong id="snapshotModelRecommendation">-</strong>
+          </article>
+        </div>
+        <p id="snapshotSyncMeta" class="muted-copy">Noch kein Sync verfuegbar.</p>
+      </section>
+
+      <section class="panel span-12">
+        <div class="panel-head-space">
+          <div>
+            <p class="eyebrow">Secondary Analysis</p>
+            <h2>Trends, load and raw detail</h2>
+          </div>
+          <div class="tab-bar" id="tabBar">
+            <button class="tab-btn is-active" type="button" data-tab="trends">Trends</button>
+            <button class="tab-btn" type="button" data-tab="load">Load</button>
+            <button class="tab-btn" type="button" data-tab="details">Details</button>
+          </div>
+        </div>
+
+        <div class="tab-panel is-active" data-panel="trends">
+          <div class="chart-grid">
+            <article class="chart-card">
+              <div class="chart-head">
+                <div>
+                  <p class="eyebrow">Readiness trend</p>
+                  <h3>Form over the selected window</h3>
+                </div>
+                <p class="muted-copy">The marked day stays in sync with all panels.</p>
+              </div>
+              <svg id="readinessChart" class="chart-surface" viewBox="0 0 920 320" preserveAspectRatio="none"></svg>
+            </article>
+
+            <article class="chart-card">
+              <div class="chart-head">
+                <div>
+                  <p class="eyebrow">Load trend</p>
+                  <h3>Daily load versus acute load</h3>
+                </div>
+                <p class="muted-copy">Use this to see whether the decision is backed by trend pressure.</p>
+              </div>
+              <svg id="loadChart" class="chart-surface" viewBox="0 0 920 320" preserveAspectRatio="none"></svg>
+            </article>
+          </div>
+        </div>
+
+        <div class="tab-panel" data-panel="load">
+          <div class="load-grid">
+            <article class="chart-card">
+              <div class="chart-head">
+                <div>
+                  <p class="eyebrow">Load heatmap</p>
+                  <h3>Density of training stress</h3>
+                </div>
+                <p class="muted-copy">Darker blocks indicate relatively heavier days.</p>
+              </div>
+              <div id="loadHeatmap" class="heatmap"></div>
+            </article>
+
+            <article class="chart-card">
+              <div class="chart-head">
+                <div>
+                  <p class="eyebrow">Decision history</p>
+                  <h3>Clickable day-by-day table</h3>
+                </div>
+                <p class="muted-copy">Selecting a day updates the whole dashboard.</p>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Datum</th>
+                      <th>Readiness</th>
+                      <th>Load</th>
+                      <th>Ratio</th>
+                      <th>Empfehlung</th>
+                    </tr>
+                  </thead>
+                  <tbody id="historyTable"></tbody>
+                </table>
+              </div>
+            </article>
+          </div>
+        </div>
+
+        <div class="tab-panel" data-panel="details">
+          <div class="detail-grid">
+            <article class="chart-card">
+              <div class="chart-head">
+                <div>
+                  <p class="eyebrow">Activities</p>
+                  <h3 id="activityHeadline">Training des Fokus-Tags</h3>
+                </div>
+                <p class="muted-copy">Raw Garmin activities stay available for context.</p>
+              </div>
+              <div id="activityList" class="activity-list"></div>
+            </article>
+
+            <article class="chart-card">
+              <div class="chart-head">
+                <div>
+                  <p class="eyebrow">Mode-specific options</p>
+                  <h3>Original model outputs</h3>
+                </div>
+                <p id="unitIntro" class="muted-copy">Die Vorschlaege folgen dem aktiven Modus.</p>
+              </div>
+              <div id="unitCards" class="unit-grid"></div>
+            </article>
+
+            <article class="chart-card prompt-card">
+              <div class="chart-head">
+                <div>
+                  <p class="eyebrow">AI Prompt</p>
+                  <h3>Direct export for external analysis</h3>
+                </div>
+                <button id="copyPromptBtn" class="btn btn-secondary" type="button">Prompt kopieren</button>
+              </div>
+              <textarea id="aiPrompt" spellcheck="false" readonly></textarea>
+            </article>
+          </div>
+        </div>
+      </section>
+    </main>
 
     <section class="auth-grid">
       <article class="panel auth-panel">
@@ -78,198 +376,11 @@
         </label>
         <div class="button-row">
           <button id="connectGarminBtn" class="btn btn-primary" type="button" disabled>Garmin speichern</button>
-          <button id="updateBtn" class="btn btn-secondary" type="button" disabled>Update</button>
-          <button id="backfillBtn" class="btn btn-secondary" type="button" disabled>Backfill 28d</button>
         </div>
+        <div id="syncStatusPanel" class="sync-status-panel"></div>
+        <div id="syncActionButtons" class="button-row sync-action-row"></div>
       </article>
     </section>
-
-    <main class="dashboard-grid">
-      <section class="panel hero-panel span-7">
-        <div class="panel-head-space">
-          <div>
-            <p class="eyebrow">Aktiver Fokus</p>
-            <h2 id="focusDate">-</h2>
-            <p id="focusHint" class="muted-copy">Noch kein Trainingstag geladen</p>
-          </div>
-          <div class="toolbar">
-            <label class="toolbar-field">
-              <span>Zeitraum</span>
-              <select id="rangeSelect"></select>
-            </label>
-            <label class="toolbar-field">
-              <span>Modus</span>
-              <select id="modeSelect">
-                <option value="hybrid">Hybrid</option>
-                <option value="run">Run</option>
-                <option value="bike">Bike</option>
-                <option value="strength">Strength</option>
-              </select>
-            </label>
-          </div>
-        </div>
-
-        <div class="hero-callout">
-          <p class="callout-label">Trainingsempfehlung</p>
-          <div id="focusRecommendation" class="callout-value">-</div>
-          <p id="focusRecommendationMeta" class="muted-copy">Wird aus Readiness, Lastbalance und Baseline-Abweichung abgeleitet.</p>
-        </div>
-
-        <div class="stat-ribbon">
-          <article class="ribbon-card" data-tone="neutral">
-            <p class="ribbon-label">Readiness</p>
-            <div id="focusReadiness" class="ribbon-value">-</div>
-            <p id="focusReadinessDelta" class="ribbon-meta">-</p>
-          </article>
-          <article class="ribbon-card" data-tone="neutral">
-            <p class="ribbon-label">7d / 28d Ratio</p>
-            <div id="focusRatio" class="ribbon-value">-</div>
-            <p id="focusRatioMeta" class="ribbon-meta">-</p>
-          </article>
-          <article class="ribbon-card" data-tone="neutral">
-            <p class="ribbon-label">Sync Status</p>
-            <div id="focusSync" class="ribbon-value">-</div>
-            <p id="focusSyncMeta" class="ribbon-meta">-</p>
-          </article>
-        </div>
-      </section>
-
-      <section class="panel span-5">
-        <div class="panel-head-space">
-          <div>
-            <p class="eyebrow">Baseline Delta</p>
-            <h2>Morgenwerte relativ zu dir</h2>
-          </div>
-          <div class="mini-summary">
-            <div>
-              <span>Ø Readiness</span>
-              <strong id="summaryAverageReadiness">-</strong>
-            </div>
-            <div>
-              <span>Ø Load</span>
-              <strong id="summaryAverageLoad">-</strong>
-            </div>
-          </div>
-        </div>
-        <div id="relativeMetricGrid" class="relative-grid"></div>
-      </section>
-
-      <section class="panel span-12">
-        <div class="panel-head-space">
-          <div>
-            <p class="eyebrow">Sekundaere Analyse</p>
-            <h2>Trends, Last und Details</h2>
-          </div>
-          <div class="tab-bar" id="tabBar">
-            <button class="tab-btn is-active" type="button" data-tab="trends">Trends</button>
-            <button class="tab-btn" type="button" data-tab="load">Belastung</button>
-            <button class="tab-btn" type="button" data-tab="details">Details</button>
-          </div>
-        </div>
-
-        <div class="tab-panel is-active" data-panel="trends">
-          <div class="chart-grid">
-            <article class="chart-card">
-              <div class="chart-head">
-                <div>
-                  <p class="eyebrow">Readiness Verlauf</p>
-                  <h3>Aktuelle Form ueber den gewaehlten Zeitraum</h3>
-                </div>
-                <p class="muted-copy">Der markierte Tag bleibt in allen Ansichten synchron.</p>
-              </div>
-              <svg id="readinessChart" class="chart-surface" viewBox="0 0 920 320" preserveAspectRatio="none"></svg>
-            </article>
-
-            <article class="chart-card">
-              <div class="chart-head">
-                <div>
-                  <p class="eyebrow">Load Verlauf</p>
-                  <h3>Tageslast versus akute Last</h3>
-                </div>
-                <p class="muted-copy">Farben reagieren auf Unterlast, Zielbereich und Ueberlast.</p>
-              </div>
-              <svg id="loadChart" class="chart-surface" viewBox="0 0 920 320" preserveAspectRatio="none"></svg>
-            </article>
-          </div>
-        </div>
-
-        <div class="tab-panel" data-panel="load">
-          <div class="load-grid">
-            <article class="chart-card">
-              <div class="chart-head">
-                <div>
-                  <p class="eyebrow">Load Heatmap</p>
-                  <h3>Belastungsdichte ueber den Filterzeitraum</h3>
-                </div>
-                <p class="muted-copy">Dunklere Felder bedeuten relativ hoehere Tageslast.</p>
-              </div>
-              <div id="loadHeatmap" class="heatmap"></div>
-            </article>
-
-            <article class="chart-card">
-              <div class="chart-head">
-                <div>
-                  <p class="eyebrow">Verlaufstabelle</p>
-                  <h3>Klickbare Tageshistorie</h3>
-                </div>
-                <p class="muted-copy">Ein Klick setzt den Fokus fuer Karten, Charts und Prompt.</p>
-              </div>
-              <div class="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Datum</th>
-                      <th>Readiness</th>
-                      <th>Load</th>
-                      <th>Ratio</th>
-                      <th>Empfehlung</th>
-                    </tr>
-                  </thead>
-                  <tbody id="historyTable"></tbody>
-                </table>
-              </div>
-            </article>
-          </div>
-        </div>
-
-        <div class="tab-panel" data-panel="details">
-          <div class="detail-grid">
-            <article class="chart-card">
-              <div class="chart-head">
-                <div>
-                  <p class="eyebrow">Einheiten</p>
-                  <h3 id="activityHeadline">Training des Fokus-Tags</h3>
-                </div>
-                <p class="muted-copy">Jede Aktivitaet zeigt Dauer, Herzfrequenz und Trainingslast.</p>
-              </div>
-              <div id="activityList" class="activity-list"></div>
-            </article>
-
-            <article class="chart-card">
-              <div class="chart-head">
-                <div>
-                  <p class="eyebrow">Konkrete Optionen</p>
-                  <h3>Naechste sinnvolle Einheiten</h3>
-                </div>
-                <p id="unitIntro" class="muted-copy">Die Vorschlaege folgen dem aktiven Modus.</p>
-              </div>
-              <div id="unitCards" class="unit-grid"></div>
-            </article>
-
-            <article class="chart-card prompt-card">
-              <div class="chart-head">
-                <div>
-                  <p class="eyebrow">AI Prompt</p>
-                  <h3>Direkter Prompt fuer externe Auswertung</h3>
-                </div>
-                <button id="copyPromptBtn" class="btn btn-secondary" type="button">Prompt kopieren</button>
-              </div>
-              <textarea id="aiPrompt" spellcheck="false" readonly></textarea>
-            </article>
-          </div>
-        </div>
-      </section>
-    </main>
   </div>
 </body>
 </html>
