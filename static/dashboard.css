@@ -52,8 +52,12 @@ textarea {
   display: flex;
   justify-content: space-between;
   gap: 24px;
-  align-items: flex-end;
+  align-items: flex-start;
   margin-bottom: 28px;
+}
+
+.masthead-copy {
+  max-width: 760px;
 }
 
 .masthead h1,
@@ -149,7 +153,7 @@ textarea {
 }
 
 .detail-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .panel,
@@ -547,14 +551,122 @@ th {
   grid-column: span 3;
 }
 
+.surface-stack {
+  display: grid;
+  gap: 18px;
+}
+
+.surface-panel {
+  display: none;
+}
+
+.surface-panel.is-active {
+  display: grid;
+  gap: 18px;
+}
+
+.surface-intro {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-end;
+  padding: 4px 4px 0;
+}
+
+.surface-intro h2 {
+  margin: 0;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 1.8rem;
+  letter-spacing: -0.03em;
+}
+
+.surface-nav {
+  display: inline-flex;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 999px;
+  background: rgba(4, 15, 20, 0.8);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+}
+
+.surface-nav-btn {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 11px 16px;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.surface-nav-btn.is-active {
+  background: rgba(255, 184, 92, 0.14);
+  color: var(--text);
+}
+
+.utility-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.utility-toggle {
+  min-width: 124px;
+}
+
+.analysis-toolbar {
+  justify-content: flex-end;
+  align-items: flex-end;
+}
+
+.analysis-toolbar .toolbar-field {
+  min-width: 150px;
+}
+
+.plan-surface {
+  padding: 26px;
+  background:
+    linear-gradient(180deg, rgba(255, 184, 92, 0.04), transparent 18%),
+    var(--panel-strong);
+}
+
+.plan-side-stack {
+  align-content: start;
+}
+
+.plan-options-section {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(173, 212, 202, 0.08);
+}
+
+.plan-selection-copy {
+  margin: 12px 0 0;
+}
+
+.analysis-divider {
+  height: 1px;
+  margin: 18px 0;
+  background: rgba(173, 212, 202, 0.08);
+}
+
+.debug-grid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(320px, 0.8fr) minmax(0, 1.2fr);
+}
+
 .utility-stack {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   justify-items: end;
 }
 
 .auth-grid {
-  margin-top: 18px;
+  margin-top: 0;
 }
 
 .sync-badge,
@@ -752,6 +864,25 @@ th {
   padding: 18px;
 }
 
+.plan-option-card {
+  width: 100%;
+  border: 1px solid var(--line);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: transform 140ms ease, border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
+}
+
+.plan-option-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 184, 92, 0.26);
+}
+
+.plan-option-card:focus-visible {
+  outline: 2px solid rgba(255, 184, 92, 0.82);
+  outline-offset: 3px;
+}
+
 .decision-session-card[data-selected="true"] {
   border-color: rgba(255, 184, 92, 0.36);
   box-shadow: inset 0 0 0 1px rgba(255, 184, 92, 0.22);
@@ -767,10 +898,32 @@ th {
   line-height: 1.5;
 }
 
+.session-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
 .session-meta {
   justify-content: space-between;
   align-items: center;
   font-size: 0.86rem;
+}
+
+.session-selection-state {
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.plan-option-card[data-selected="true"] .session-selection-state {
+  background: rgba(255, 184, 92, 0.14);
+  color: var(--text);
 }
 
 .session-tag,
@@ -885,6 +1038,7 @@ th {
   .chart-grid,
   .load-grid,
   .detail-grid,
+  .debug-grid,
   .decision-layout,
   .decision-session-grid {
     grid-template-columns: 1fr;
@@ -902,13 +1056,28 @@ th {
 
   .masthead,
   .panel-head-space,
-  .chart-head {
+  .chart-head,
+  .surface-intro {
     flex-direction: column;
     align-items: stretch;
   }
 
-   .utility-stack {
+  .utility-stack {
     justify-items: stretch;
+  }
+
+  .utility-row {
+    justify-content: stretch;
+  }
+
+  .surface-nav {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .surface-nav-btn {
+    flex: 1 1 0;
+    text-align: center;
   }
 
   .stat-ribbon {

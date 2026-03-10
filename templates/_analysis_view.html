@@ -1,0 +1,197 @@
+<section class="surface-intro">
+  <div>
+    <p class="eyebrow">Analysis</p>
+    <h2>Why the recommendation looks like this</h2>
+    <p class="muted-copy">
+      Trends, baseline deviations, history, and raw activity detail stay here so the plan surface can remain focused.
+    </p>
+  </div>
+  <div class="toolbar analysis-toolbar">
+    <label class="toolbar-field">
+      <span>Zeitraum</span>
+      <select id="rangeSelect"></select>
+    </label>
+    <label class="toolbar-field">
+      <span>Modus</span>
+      <select id="modeSelect">
+        <option value="hybrid">Hybrid</option>
+        <option value="run">Run</option>
+        <option value="bike">Bike</option>
+        <option value="strength">Strength</option>
+      </select>
+    </label>
+  </div>
+</section>
+
+<div class="dashboard-grid analysis-grid">
+  <section class="panel span-7">
+    <div class="panel-head-space">
+      <div>
+        <p class="eyebrow">Baseline Comparison</p>
+        <h2>Today versus your normal</h2>
+      </div>
+      <div class="mini-summary">
+        <div>
+          <span>Avg Readiness</span>
+          <strong id="summaryAverageReadiness">-</strong>
+        </div>
+        <div>
+          <span>Avg Load</span>
+          <strong id="summaryAverageLoad">-</strong>
+        </div>
+      </div>
+    </div>
+    <div id="baselineMetricList" class="baseline-grid"></div>
+  </section>
+
+  <section class="panel span-5">
+    <div class="panel-head-space">
+      <div>
+        <p class="eyebrow">Recommendation context</p>
+        <h2>Why this recommendation?</h2>
+      </div>
+    </div>
+    <div id="decisionWhyList" class="why-list"></div>
+
+    <div class="analysis-divider"></div>
+
+    <div class="panel-head-space compact-head">
+      <div>
+        <p class="eyebrow">Coach Snapshot</p>
+        <h3>Context around the call</h3>
+      </div>
+    </div>
+    <div class="snapshot-grid">
+      <article class="snapshot-card">
+        <span>Focus day</span>
+        <strong id="snapshotFocusDate">-</strong>
+      </article>
+      <article class="snapshot-card">
+        <span>Recommendation window</span>
+        <strong id="snapshotWindow">-</strong>
+      </article>
+      <article class="snapshot-card">
+        <span>7d / 28d ratio</span>
+        <strong id="snapshotRatio">-</strong>
+      </article>
+      <article class="snapshot-card">
+        <span>Stress label</span>
+        <strong id="snapshotStress">-</strong>
+      </article>
+      <article class="snapshot-card">
+        <span>Sync status</span>
+        <strong id="snapshotSyncStatus">-</strong>
+      </article>
+      <article class="snapshot-card">
+        <span>Model recommendation</span>
+        <strong id="snapshotModelRecommendation">-</strong>
+      </article>
+    </div>
+    <p id="snapshotSyncMeta" class="muted-copy">Noch kein Sync verfuegbar.</p>
+  </section>
+
+  <section class="panel span-12">
+    <div class="panel-head-space">
+      <div>
+        <p class="eyebrow">Secondary Analysis</p>
+        <h2>Trends, load, history and activities</h2>
+      </div>
+      <div class="tab-bar" id="tabBar">
+        <button class="tab-btn is-active" type="button" data-tab="trends">Trends</button>
+        <button class="tab-btn" type="button" data-tab="history">History</button>
+        <button class="tab-btn" type="button" data-tab="activities">Activities</button>
+      </div>
+    </div>
+
+    <div class="tab-panel is-active" data-panel="trends">
+      <div class="chart-grid">
+        <article class="chart-card">
+          <div class="chart-head">
+            <div>
+              <p class="eyebrow">Readiness trend</p>
+              <h3>Form over the selected window</h3>
+            </div>
+            <p class="muted-copy">The marked day stays in sync with all panels.</p>
+          </div>
+          <svg id="readinessChart" class="chart-surface" viewBox="0 0 920 320" preserveAspectRatio="none"></svg>
+        </article>
+
+        <article class="chart-card">
+          <div class="chart-head">
+            <div>
+              <p class="eyebrow">Load trend</p>
+              <h3>Daily load versus acute load</h3>
+            </div>
+            <p class="muted-copy">Use this to see whether the decision is backed by trend pressure.</p>
+          </div>
+          <svg id="loadChart" class="chart-surface" viewBox="0 0 920 320" preserveAspectRatio="none"></svg>
+        </article>
+      </div>
+    </div>
+
+    <div class="tab-panel" data-panel="history">
+      <div class="load-grid">
+        <article class="chart-card">
+          <div class="chart-head">
+            <div>
+              <p class="eyebrow">Load heatmap</p>
+              <h3>Density of training stress</h3>
+            </div>
+            <p class="muted-copy">Darker blocks indicate relatively heavier days.</p>
+          </div>
+          <div id="loadHeatmap" class="heatmap"></div>
+        </article>
+
+        <article class="chart-card">
+          <div class="chart-head">
+            <div>
+              <p class="eyebrow">Decision history</p>
+              <h3>Clickable day-by-day table</h3>
+            </div>
+            <p class="muted-copy">Selecting a day updates every dashboard surface.</p>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Datum</th>
+                  <th>Readiness</th>
+                  <th>Load</th>
+                  <th>Ratio</th>
+                  <th>Empfehlung</th>
+                </tr>
+              </thead>
+              <tbody id="historyTable"></tbody>
+            </table>
+          </div>
+        </article>
+      </div>
+    </div>
+
+    <div class="tab-panel" data-panel="activities">
+      <div class="detail-grid">
+        <article class="chart-card">
+          <div class="chart-head">
+            <div>
+              <p class="eyebrow">Activities</p>
+              <h3 id="activityHeadline">Training des Fokus-Tags</h3>
+            </div>
+            <p class="muted-copy">Raw Garmin activities stay available for context.</p>
+          </div>
+          <div id="activityList" class="activity-list"></div>
+        </article>
+
+        <article class="chart-card">
+          <div class="chart-head">
+            <div>
+              <p class="eyebrow">Mode-specific options</p>
+              <h3>Original model outputs</h3>
+            </div>
+            <p id="unitIntro" class="muted-copy">Die Vorschlaege folgen dem aktiven Modus.</p>
+          </div>
+          <div id="unitCards" class="unit-grid"></div>
+        </article>
+      </div>
+    </div>
+  </section>
+</div>

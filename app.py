@@ -163,6 +163,7 @@ def index():
         missing_public_config=_missing_public_config(),
         range_filters=list(TRAINING_CONFIG.windows.range_filters),
         default_range_days=TRAINING_CONFIG.windows.default_dashboard_range,
+        debug_mode=DEBUG_MODE,
     )
 
 

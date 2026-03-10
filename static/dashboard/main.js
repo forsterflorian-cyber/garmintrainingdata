@@ -15,13 +15,26 @@ import { applyPlannedSessionForecast, getPlannedSession, setPlannedSession } fro
 import { el, formatDateTime, formatNumber, safeHtml, safeText } from "./lib/formatters.js";
 
 const APP_CONFIG = window.__APP_CONFIG__ || {};
+const SURFACE_VIEWS = ["plan", "analysis", "sync", "debug"];
+const ADVANCED_MODE_KEY = "dashboard.advancedMode";
+
+function loadAdvancedModePreference() {
+  try {
+    return window.localStorage.getItem(ADVANCED_MODE_KEY) === "true";
+  } catch (_error) {
+    return false;
+  }
+}
+
 const state = {
   currentSession: null,
   dashboard: null,
   selectedDate: null,
   rangeDays: APP_CONFIG.defaultRangeDays || 28,
   mode: "hybrid",
+  activeView: "plan",
   activeTab: "trends",
+  advancedMode: loadAdvancedModePreference(),
   syncStatus: null,
   syncPollTimer: null,
   syncPollInFlight: false,
@@ -63,6 +76,83 @@ function currentUserId() {
 
 function isSyncActive(syncState) {
   return syncState === "syncing" || syncState === "backfilling";
+}
+
+function debugSurfaceAllowed() {
+  return Boolean(APP_CONFIG.debugMode || state.advancedMode);
+}
+
+function requestedViewFromHash() {
+  const raw = window.location.hash.replace("#", "").trim().toLowerCase();
+  return SURFACE_VIEWS.includes(raw) ? raw : "plan";
+}
+
+function resolveSurfaceView(view) {
+  if (!SURFACE_VIEWS.includes(view)) {
+    return "plan";
+  }
+  if (view === "debug" && !debugSurfaceAllowed()) {
+    return "plan";
+  }
+  return view;
+}
+
+function persistAdvancedModePreference() {
+  try {
+    window.localStorage.setItem(ADVANCED_MODE_KEY, String(state.advancedMode));
+  } catch (_error) {
+    // Ignore storage failures and keep the in-memory state.
+  }
+}
+
+function syncLocationWithView(view) {
+  if (view === "plan") {
+    const nextUrl = `${window.location.pathname}${window.location.search}`;
+    window.history.replaceState(null, "", nextUrl);
+    return;
+  }
+  if (window.location.hash !== `#${view}`) {
+    window.location.hash = view;
+  }
+}
+
+function syncSurfaceUi({ syncHash = true } = {}) {
+  const activeView = resolveSurfaceView(state.activeView);
+  state.activeView = activeView;
+
+  const debugButton = el("debugNavBtn");
+  if (debugButton) {
+    debugButton.hidden = !debugSurfaceAllowed();
+  }
+
+  document.querySelectorAll("[data-view]").forEach((button) => {
+    const isActive = button.dataset.view === activeView;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-current", isActive ? "page" : "false");
+  });
+
+  document.querySelectorAll("[data-view-panel]").forEach((panel) => {
+    const isActive = panel.dataset.viewPanel === activeView;
+    panel.classList.toggle("is-active", isActive);
+    panel.hidden = !isActive;
+  });
+
+  const advancedToggle = el("advancedToggleBtn");
+  if (advancedToggle) {
+    const forcedOn = Boolean(APP_CONFIG.debugMode);
+    advancedToggle.hidden = forcedOn;
+    advancedToggle.setAttribute("aria-pressed", state.advancedMode ? "true" : "false");
+    advancedToggle.textContent = state.advancedMode ? "Advanced on" : "Advanced off";
+  }
+
+  if (syncHash) {
+    syncLocationWithView(activeView);
+  }
+}
+
+function setActiveView(view, options = {}) {
+  state.activeView = resolveSurfaceView(view);
+  syncSurfaceUi(options);
 }
 
 function setControlsDisabled(disabled) {
@@ -177,8 +267,12 @@ function renderSyncUi(sync = state.syncStatus) {
   renderSyncActionButtons(sync || {});
   bindSyncActionButtons();
 
-  el("snapshotSyncStatus").textContent = safeText(sync?.syncState);
-  el("snapshotSyncMeta").textContent = syncStatusSummary(sync);
+  if (el("snapshotSyncStatus")) {
+    el("snapshotSyncStatus").textContent = safeText(sync?.syncState);
+  }
+  if (el("snapshotSyncMeta")) {
+    el("snapshotSyncMeta").textContent = syncStatusSummary(sync);
+  }
 }
 
 function renderDecisionPanels(payload) {
@@ -236,8 +330,9 @@ function renderDebug(payload) {
     lines.push(`syncMissingDays=${safeText(syncDebug.missingDaysCount)}`);
   }
 
-  el("debugPanel").hidden = lines.length === 0;
-  el("debugList").innerHTML = lines.map((line) => `<div class="debug-line">${safeHtml(line)}</div>`).join("");
+  el("debugList").innerHTML = lines.length
+    ? lines.map((line) => `<div class="debug-line">${safeHtml(line)}</div>`).join("")
+    : '<div class="muted-copy">No debug trace available for the selected day.</div>';
 }
 
 function renderHeatmap(rows, activeDate) {
@@ -324,7 +419,10 @@ function renderModeUnits(payload) {
 }
 
 function renderPrompt(payload) {
-  el("aiPrompt").value = payload?.detail?.aiPrompt || "";
+  const promptField = el("aiPrompt");
+  if (promptField) {
+    promptField.value = payload?.detail?.aiPrompt || "";
+  }
 }
 
 function renderDashboard() {
@@ -552,7 +650,7 @@ async function connectGarmin() {
 }
 
 function bindPlannedSessionButtons() {
-  document.querySelectorAll(".plan-option-btn").forEach((button) => {
+  document.querySelectorAll(".plan-option-card").forEach((button) => {
     button.addEventListener("click", () => {
       const sessionType = button.dataset.sessionType;
       setStoredPlannedSessionType(sessionType);
@@ -577,10 +675,15 @@ function bindSyncActionButtons() {
 }
 
 function bindTabs() {
-  el("tabBar").querySelectorAll(".tab-btn").forEach((button) => {
+  const tabBar = el("tabBar");
+  if (!tabBar) {
+    return;
+  }
+
+  tabBar.querySelectorAll(".tab-btn").forEach((button) => {
     button.addEventListener("click", () => {
       state.activeTab = button.dataset.tab;
-      el("tabBar").querySelectorAll(".tab-btn").forEach((node) => {
+      tabBar.querySelectorAll(".tab-btn").forEach((node) => {
         node.classList.toggle("is-active", node === button);
       });
       document.querySelectorAll(".tab-panel").forEach((panel) => {
@@ -590,7 +693,42 @@ function bindTabs() {
   });
 }
 
+function bindSurfaceNav() {
+  const surfaceNav = el("surfaceNav");
+  if (!surfaceNav) {
+    return;
+  }
+
+  surfaceNav.querySelectorAll("[data-view]").forEach((button) => {
+    button.addEventListener("click", () => {
+      setActiveView(button.dataset.view);
+    });
+  });
+}
+
+function bindAdvancedToggle() {
+  const toggle = el("advancedToggleBtn");
+  if (!toggle) {
+    return;
+  }
+
+  toggle.addEventListener("click", () => {
+    state.advancedMode = !state.advancedMode;
+    persistAdvancedModePreference();
+    if (!debugSurfaceAllowed() && state.activeView === "debug") {
+      state.activeView = "plan";
+    }
+    syncSurfaceUi();
+  });
+
+  window.addEventListener("hashchange", () => {
+    setActiveView(requestedViewFromHash(), { syncHash: false });
+  });
+}
+
 function bindEvents() {
+  bindSurfaceNav();
+  bindAdvancedToggle();
   hydrateRangeSelect(APP_CONFIG.rangeFilters || [7, 14, 28, 84, 365], state.rangeDays);
   bindTabs();
 
@@ -662,7 +800,9 @@ if (supabaseClient) {
   });
 }
 
+state.activeView = resolveSurfaceView(requestedViewFromHash());
 bindEvents();
+syncSurfaceUi({ syncHash: false });
 setAuthUi(null);
 renderDashboard();
 restoreSession();

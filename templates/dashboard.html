@@ -15,7 +15,8 @@
       supabaseAnonKey: {{ supabase_anon_key | tojson }},
       missingPublicConfig: {{ missing_public_config | tojson }},
       rangeFilters: {{ range_filters | tojson }},
-      defaultRangeDays: {{ default_range_days | tojson }}
+      defaultRangeDays: {{ default_range_days | tojson }},
+      debugMode: {{ debug_mode | tojson }}
     };
   </script>
   <script type="module" src="{{ url_for('static', filename='dashboard/main.js') }}"></script>
@@ -25,362 +26,44 @@
     <header class="masthead">
       <div class="masthead-copy">
         <p class="eyebrow">Training Decision Dashboard</p>
-        <h1>What should you train today or tomorrow?</h1>
+        <h1>Plan first. Analyze second. Sync separately.</h1>
         <p class="subcopy">
-          The dashboard makes a training call first. Baseline deviations, load trends and raw Garmin details
-          stay available as evidence below.
+          The default surface answers what to train next. Analysis explains the call. Sync keeps account and Garmin operations out of the main plan.
         </p>
       </div>
       <div class="utility-stack">
-        <div class="status-pill">
-          <span class="status-dot"></span>
-          <span id="authStatus">Nicht eingeloggt</span>
+        <nav id="surfaceNav" class="surface-nav" aria-label="Dashboard views">
+          <button class="surface-nav-btn is-active" type="button" data-view="plan">Plan</button>
+          <button class="surface-nav-btn" type="button" data-view="analysis">Analysis</button>
+          <button class="surface-nav-btn" type="button" data-view="sync">Sync</button>
+          <button id="debugNavBtn" class="surface-nav-btn" type="button" data-view="debug" hidden>Debug</button>
+        </nav>
+        <div class="utility-row">
+          <button id="advancedToggleBtn" class="btn btn-secondary utility-toggle" type="button" aria-pressed="false">
+            Advanced off
+          </button>
+          <div id="syncStatusBadge"></div>
         </div>
-        <div id="syncStatusBadge"></div>
       </div>
     </header>
 
-    <main class="dashboard-grid">
-      <section class="panel decision-panel span-12">
-        <div class="panel-head-space">
-          <div>
-            <p class="eyebrow">Training Decision</p>
-            <h2 id="decisionTargetDay">-</h2>
-            <p id="decisionTargetMeta" class="muted-copy">Noch kein Trainingstag geladen.</p>
-          </div>
-          <div class="toolbar">
-            <label class="toolbar-field">
-              <span>Zeitraum</span>
-              <select id="rangeSelect"></select>
-            </label>
-            <label class="toolbar-field">
-              <span>Modus</span>
-              <select id="modeSelect">
-                <option value="hybrid">Hybrid</option>
-                <option value="run">Run</option>
-                <option value="bike">Bike</option>
-                <option value="strength">Strength</option>
-              </select>
-            </label>
-          </div>
-        </div>
-
-        <div class="decision-layout">
-          <article id="decisionHero" class="decision-hero" data-tone="neutral">
-            <div class="decision-level-row">
-              <div>
-                <p class="decision-label">Decision Level</p>
-                <div id="decisionLevel" class="decision-level">-</div>
-              </div>
-              <div class="decision-score-stack">
-                <div class="score-chip">
-                  <span>Deviation</span>
-                  <strong id="decisionScore">-</strong>
-                </div>
-                <div class="score-chip">
-                  <span>Readiness</span>
-                  <strong id="decisionReadiness">-</strong>
-                </div>
-              </div>
-            </div>
-            <p id="decisionSummary" class="decision-summary">Noch keine Entscheidung verfuegbar.</p>
-            <p id="decisionConclusion" class="decision-conclusion muted-copy">Die Empfehlung erscheint nach dem naechsten Sync.</p>
-            <div id="decisionStatusChips" class="decision-status-chips"></div>
-            <div class="decision-support">
-              <article class="support-chip">
-                <span>Current load</span>
-                <strong id="decisionLoadContext">-</strong>
-              </article>
-              <article class="support-chip">
-                <span>Sync</span>
-                <strong id="decisionSync">-</strong>
-              </article>
-            </div>
-          </article>
-
-          <div class="decision-side">
-            <article class="side-panel">
-              <div class="panel-head-space compact-head">
-                <div>
-                  <p class="eyebrow">Why this recommendation?</p>
-                  <h3>Decision drivers</h3>
-                </div>
-              </div>
-              <div id="decisionWhyList" class="why-list"></div>
-            </article>
-
-            <article id="forecastPanel" class="side-panel forecast-panel" data-tone="neutral">
-              <div class="panel-head-space compact-head">
-                <div>
-                  <p class="eyebrow">Tomorrow projection</p>
-                  <h3 id="forecastLevel">-</h3>
-                </div>
-              </div>
-              <p id="forecastText" class="muted-copy">Log a planned session to project tomorrow.</p>
-              <p id="forecastMeta" class="forecast-meta">-</p>
-            </article>
-
-            <article class="side-panel">
-              <div class="panel-head-space compact-head">
-                <div>
-                  <p class="eyebrow">Avoid today</p>
-                  <h3>Do not spend the day here</h3>
-                </div>
-              </div>
-              <div id="avoidTodayList" class="avoid-list"></div>
-            </article>
-
-            <article id="debugPanel" class="side-panel debug-panel" hidden>
-              <div class="panel-head-space compact-head">
-                <div>
-                  <p class="eyebrow">Debug</p>
-                  <h3>Decision trace</h3>
-                </div>
-              </div>
-              <div id="debugList" class="debug-list"></div>
-            </article>
-          </div>
-        </div>
-
-        <section class="decision-actions">
-          <div>
-            <p class="eyebrow">Log planned session</p>
-            <div id="plannedSessionButtons" class="button-row quick-plan-row"></div>
-          </div>
-          <p id="plannedSessionSelection" class="muted-copy">Noch keine Session fuer die Prognose gespeichert.</p>
-        </section>
-
-        <section>
-          <div class="panel-head-space compact-head">
-            <div>
-              <p class="eyebrow">Best Options Today</p>
-              <h3>Concrete sessions for the current decision</h3>
-            </div>
-            <p class="muted-copy">Duration, intensity and sport are shown directly on each option.</p>
-          </div>
-          <div id="decisionSessionGrid" class="decision-session-grid"></div>
-        </section>
+    <main class="surface-stack">
+      <section class="surface-panel is-active" data-view-panel="plan">
+        {% include "_plan_view.html" %}
       </section>
 
-      <section class="panel span-7">
-        <div class="panel-head-space">
-          <div>
-            <p class="eyebrow">Baseline Comparison</p>
-            <h2>Today versus your normal</h2>
-          </div>
-          <div class="mini-summary">
-            <div>
-              <span>Avg Readiness</span>
-              <strong id="summaryAverageReadiness">-</strong>
-            </div>
-            <div>
-              <span>Avg Load</span>
-              <strong id="summaryAverageLoad">-</strong>
-            </div>
-          </div>
-        </div>
-        <div id="baselineMetricList" class="baseline-grid"></div>
+      <section class="surface-panel" data-view-panel="analysis" hidden>
+        {% include "_analysis_view.html" %}
       </section>
 
-      <section class="panel span-5">
-        <div class="panel-head-space">
-          <div>
-            <p class="eyebrow">Coach Snapshot</p>
-            <h2>Context around the call</h2>
-          </div>
-        </div>
-        <div class="snapshot-grid">
-          <article class="snapshot-card">
-            <span>Focus day</span>
-            <strong id="snapshotFocusDate">-</strong>
-          </article>
-          <article class="snapshot-card">
-            <span>Recommendation window</span>
-            <strong id="snapshotWindow">-</strong>
-          </article>
-          <article class="snapshot-card">
-            <span>7d / 28d ratio</span>
-            <strong id="snapshotRatio">-</strong>
-          </article>
-          <article class="snapshot-card">
-            <span>Stress label</span>
-            <strong id="snapshotStress">-</strong>
-          </article>
-          <article class="snapshot-card">
-            <span>Sync status</span>
-            <strong id="snapshotSyncStatus">-</strong>
-          </article>
-          <article class="snapshot-card">
-            <span>Model recommendation</span>
-            <strong id="snapshotModelRecommendation">-</strong>
-          </article>
-        </div>
-        <p id="snapshotSyncMeta" class="muted-copy">Noch kein Sync verfuegbar.</p>
+      <section class="surface-panel" data-view-panel="sync" hidden>
+        {% include "_sync_view.html" %}
       </section>
 
-      <section class="panel span-12">
-        <div class="panel-head-space">
-          <div>
-            <p class="eyebrow">Secondary Analysis</p>
-            <h2>Trends, load and raw detail</h2>
-          </div>
-          <div class="tab-bar" id="tabBar">
-            <button class="tab-btn is-active" type="button" data-tab="trends">Trends</button>
-            <button class="tab-btn" type="button" data-tab="load">Load</button>
-            <button class="tab-btn" type="button" data-tab="details">Details</button>
-          </div>
-        </div>
-
-        <div class="tab-panel is-active" data-panel="trends">
-          <div class="chart-grid">
-            <article class="chart-card">
-              <div class="chart-head">
-                <div>
-                  <p class="eyebrow">Readiness trend</p>
-                  <h3>Form over the selected window</h3>
-                </div>
-                <p class="muted-copy">The marked day stays in sync with all panels.</p>
-              </div>
-              <svg id="readinessChart" class="chart-surface" viewBox="0 0 920 320" preserveAspectRatio="none"></svg>
-            </article>
-
-            <article class="chart-card">
-              <div class="chart-head">
-                <div>
-                  <p class="eyebrow">Load trend</p>
-                  <h3>Daily load versus acute load</h3>
-                </div>
-                <p class="muted-copy">Use this to see whether the decision is backed by trend pressure.</p>
-              </div>
-              <svg id="loadChart" class="chart-surface" viewBox="0 0 920 320" preserveAspectRatio="none"></svg>
-            </article>
-          </div>
-        </div>
-
-        <div class="tab-panel" data-panel="load">
-          <div class="load-grid">
-            <article class="chart-card">
-              <div class="chart-head">
-                <div>
-                  <p class="eyebrow">Load heatmap</p>
-                  <h3>Density of training stress</h3>
-                </div>
-                <p class="muted-copy">Darker blocks indicate relatively heavier days.</p>
-              </div>
-              <div id="loadHeatmap" class="heatmap"></div>
-            </article>
-
-            <article class="chart-card">
-              <div class="chart-head">
-                <div>
-                  <p class="eyebrow">Decision history</p>
-                  <h3>Clickable day-by-day table</h3>
-                </div>
-                <p class="muted-copy">Selecting a day updates the whole dashboard.</p>
-              </div>
-              <div class="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Datum</th>
-                      <th>Readiness</th>
-                      <th>Load</th>
-                      <th>Ratio</th>
-                      <th>Empfehlung</th>
-                    </tr>
-                  </thead>
-                  <tbody id="historyTable"></tbody>
-                </table>
-              </div>
-            </article>
-          </div>
-        </div>
-
-        <div class="tab-panel" data-panel="details">
-          <div class="detail-grid">
-            <article class="chart-card">
-              <div class="chart-head">
-                <div>
-                  <p class="eyebrow">Activities</p>
-                  <h3 id="activityHeadline">Training des Fokus-Tags</h3>
-                </div>
-                <p class="muted-copy">Raw Garmin activities stay available for context.</p>
-              </div>
-              <div id="activityList" class="activity-list"></div>
-            </article>
-
-            <article class="chart-card">
-              <div class="chart-head">
-                <div>
-                  <p class="eyebrow">Mode-specific options</p>
-                  <h3>Original model outputs</h3>
-                </div>
-                <p id="unitIntro" class="muted-copy">Die Vorschlaege folgen dem aktiven Modus.</p>
-              </div>
-              <div id="unitCards" class="unit-grid"></div>
-            </article>
-
-            <article class="chart-card prompt-card">
-              <div class="chart-head">
-                <div>
-                  <p class="eyebrow">AI Prompt</p>
-                  <h3>Direct export for external analysis</h3>
-                </div>
-                <button id="copyPromptBtn" class="btn btn-secondary" type="button">Prompt kopieren</button>
-              </div>
-              <textarea id="aiPrompt" spellcheck="false" readonly></textarea>
-            </article>
-          </div>
-        </div>
+      <section id="debugSurface" class="surface-panel surface-panel-debug" data-view-panel="debug" hidden>
+        {% include "_debug_view.html" %}
       </section>
     </main>
-
-    <section class="auth-grid">
-      <article class="panel auth-panel">
-        <div class="panel-head">
-          <div>
-            <p class="eyebrow">App Konto</p>
-            <h2>Supabase Login</h2>
-          </div>
-        </div>
-        <label class="field">
-          <span>E-Mail</span>
-          <input id="loginEmail" type="email" placeholder="name@example.com">
-        </label>
-        <label class="field">
-          <span>Passwort</span>
-          <input id="loginPassword" type="password" placeholder="Dein Dashboard Passwort">
-        </label>
-        <div class="button-row">
-          <button id="loginBtn" class="btn btn-primary" type="button">Login</button>
-          <button id="signupBtn" class="btn btn-secondary" type="button">Registrieren</button>
-          <button id="logoutBtn" class="btn btn-secondary" type="button" hidden>Logout</button>
-        </div>
-      </article>
-
-      <article class="panel auth-panel">
-        <div class="panel-head">
-          <div>
-            <p class="eyebrow">Garmin Connect</p>
-            <h2>Synchronisation</h2>
-          </div>
-          <p id="garminStatus" class="muted-copy">Bitte zuerst einloggen, um Garmin zu verbinden.</p>
-        </div>
-        <label class="field">
-          <span>Garmin E-Mail</span>
-          <input id="garminEmail" type="email" placeholder="dein-garmin-login@example.com" disabled>
-        </label>
-        <label class="field">
-          <span>Garmin Passwort</span>
-          <input id="garminPassword" type="password" placeholder="Dein Garmin Passwort" disabled>
-        </label>
-        <div class="button-row">
-          <button id="connectGarminBtn" class="btn btn-primary" type="button" disabled>Garmin speichern</button>
-        </div>
-        <div id="syncStatusPanel" class="sync-status-panel"></div>
-        <div id="syncActionButtons" class="button-row sync-action-row"></div>
-      </article>
-    </section>
   </div>
 </body>
 </html>

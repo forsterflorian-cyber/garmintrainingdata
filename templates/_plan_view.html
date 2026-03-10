@@ -1,0 +1,68 @@
+<section class="panel decision-panel plan-surface">
+  <div class="panel-head-space">
+    <div>
+      <p class="eyebrow">Plan</p>
+      <h2 id="decisionTargetDay">-</h2>
+      <p id="decisionTargetMeta" class="muted-copy">Noch kein Trainingstag geladen.</p>
+    </div>
+  </div>
+
+  <div class="decision-layout plan-decision-layout">
+    <article id="decisionHero" class="decision-hero" data-tone="neutral">
+      <div class="decision-level-row">
+        <div>
+          <p class="decision-label">Decision Level</p>
+          <div id="decisionLevel" class="decision-level">-</div>
+        </div>
+        <div class="decision-score-stack">
+          <div class="score-chip">
+            <span>Deviation</span>
+            <strong id="decisionScore">-</strong>
+          </div>
+          <div class="score-chip">
+            <span>Readiness</span>
+            <strong id="decisionReadiness">-</strong>
+          </div>
+        </div>
+      </div>
+      <p id="decisionSummary" class="decision-summary">Noch keine Entscheidung verfuegbar.</p>
+      <p id="decisionConclusion" class="decision-conclusion muted-copy">Die Empfehlung erscheint nach dem naechsten Sync.</p>
+      <div id="decisionStatusChips" class="decision-status-chips"></div>
+    </article>
+
+    <div class="decision-side plan-side-stack">
+      <article id="forecastPanel" class="side-panel forecast-panel" data-tone="neutral">
+        <div class="panel-head-space compact-head">
+          <div>
+            <p class="eyebrow">Tomorrow projection</p>
+            <h3 id="forecastLevel">-</h3>
+          </div>
+        </div>
+        <p id="forecastText" class="muted-copy">Waehle eine Session, um morgen zu projizieren.</p>
+        <p id="forecastMeta" class="forecast-meta">-</p>
+      </article>
+
+      <article class="side-panel">
+        <div class="panel-head-space compact-head">
+          <div>
+            <p class="eyebrow">Avoid today</p>
+            <h3>Do not spend the day here</h3>
+          </div>
+        </div>
+        <div id="avoidTodayList" class="avoid-list"></div>
+      </article>
+    </div>
+  </div>
+
+  <section class="plan-options-section">
+    <div class="panel-head-space compact-head">
+      <div>
+        <p class="eyebrow">Best Options Today</p>
+        <h3>Concrete sessions for the current decision</h3>
+      </div>
+      <p class="muted-copy">Select an option to preview its effect on tomorrow.</p>
+    </div>
+    <div id="decisionSessionGrid" class="decision-session-grid"></div>
+    <p id="plannedSessionSelection" class="muted-copy plan-selection-copy">Waehle eine Session, um die Morgen-Prognose zu aktualisieren.</p>
+  </section>
+</section>

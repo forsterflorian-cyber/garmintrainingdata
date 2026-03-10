@@ -1,0 +1,32 @@
+<section class="surface-intro surface-intro-debug">
+  <div>
+    <p class="eyebrow">Debug / Export</p>
+    <h2>Advanced trace and prompt export</h2>
+    <p class="muted-copy">
+      Decision internals and export tools stay outside the normal user flow and only appear in development or advanced mode.
+    </p>
+  </div>
+</section>
+
+<section class="debug-grid">
+  <article class="panel">
+    <div class="panel-head-space">
+      <div>
+        <p class="eyebrow">Decision trace</p>
+        <h2>Rule path and debug scores</h2>
+      </div>
+    </div>
+    <div id="debugList" class="debug-list"></div>
+  </article>
+
+  <article class="panel">
+    <div class="panel-head-space">
+      <div>
+        <p class="eyebrow">AI Prompt</p>
+        <h2>Direct export for external analysis</h2>
+      </div>
+      <button id="copyPromptBtn" class="btn btn-secondary" type="button">Prompt kopieren</button>
+    </div>
+    <textarea id="aiPrompt" spellcheck="false" readonly></textarea>
+  </article>
+</section>

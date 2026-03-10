@@ -4,7 +4,6 @@ import { setPanelTone } from "../layout/SectionCard.js";
 
 export function renderTrainingDecisionCard({ payload }) {
   const decision = payload?.decision || {};
-  const sync = payload?.sync || {};
   const targetDay = payload?.today?.recommendationDay || payload?.date;
   const targetWindow = payload?.today?.recommendationDay && payload.today.recommendationDay !== payload.date
     ? "Tomorrow"
@@ -17,10 +16,6 @@ export function renderTrainingDecisionCard({ payload }) {
   el("decisionReadiness").textContent = formatNumber(payload?.today?.readiness, 0);
   el("decisionSummary").textContent = safeText(decision.summaryText, "No recommendation available.");
   el("decisionConclusion").textContent = safeText(decision.strengthGuidance, "Decision guidance pending.");
-  el("decisionLoadContext").textContent = safeText(payload?.load?.ratio7to28 !== null && payload?.load?.ratio7to28 !== undefined
-    ? `Ratio ${formatNumber(payload.load.ratio7to28, 2)}`
-    : "No ratio");
-  el("decisionSync").textContent = safeText(sync.syncState, payload?.account?.connected ? "connected" : "offline");
   el("decisionStatusChips").innerHTML = renderRecommendationChips(decision.statusChips || []);
   setPanelTone(el("decisionHero"), toneForRecommendation(decision.primaryRecommendation));
 }
