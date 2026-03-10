@@ -1,1119 +1,42 @@
 from __future__ import annotations
 
+import logging
 import os
-import shutil
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
-from flask import Flask, jsonify, render_template_string, request
-from supabase import create_client
+from flask import Flask, jsonify, render_template, request
 
 from auth_supabase import require_user
-from crypto_utils import decrypt, encrypt
+from dashboard_service import (
+    build_dashboard_payload,
+    build_prompt_from_payload,
+    build_series,
+    fetch_training_rows,
+    history_from_rows,
+    mode_or_default,
+    parse_backfill_days,
+    payload_for_date,
+    upsert_training_payload,
+)
 from garmin_hybrid_report_v62_supabase_ready import (
-    ActivitySummary,
-    build_ai_prompt as report_build_ai_prompt,
-    get_tokens_path,
+    export_client_session,
     get_recent_activities,
     load_client,
     main_logic_for_day,
 )
+from garmin_session_store import GarminAccount, GarminSessionStore
+from observability import ErrorCategory, ServiceError, configure_structured_logging, get_logger, log_event, log_exception
+from supabase_client import get_supabase_admin_client
+from training_config import TRAINING_CONFIG
 
-supabase = create_client(
-    os.environ["SUPABASE_URL"],
-    os.environ["SUPABASE_SERVICE_ROLE_KEY"]
-)
 
-app = Flask(__name__)
+supabase = get_supabase_admin_client()
+store = GarminSessionStore(supabase)
 
-
-HTML = """
-<!doctype html>
-<html lang="de">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Garmin Training Dashboard</title>
-  <style>
-    :root {
-      --bg: #0b1020;
-      --panel: #151b2f;
-      --panel-2: #1b2340;
-      --text: #ecf1ff;
-      --muted: #a8b3d1;
-      --ok: #35c759;
-      --warn: #ffcc00;
-      --bad: #ff453a;
-      --border: #2b3459;
-      --accent: #7aa2ff;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: Inter, Segoe UI, Arial, sans-serif;
-      background: linear-gradient(180deg, #0b1020 0%, #10172d 100%);
-      color: var(--text);
-    }
-    .wrap { max-width: 1600px; margin: 0 auto; padding: 24px; }
-    h1 { margin: 0 0 8px 0; font-size: 32px; }
-    .sub { color: var(--muted); margin-bottom: 24px; }
-    .auth-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 24px; }
-    .auth-panel { min-height: 100%; }
-    .field { margin-bottom: 12px; }
-    .field label { display: block; color: var(--muted); font-size: 12px; margin-bottom: 6px; }
-    .field input {
-      width: 100%;
-      padding: 10px;
-      border-radius: 10px;
-      border: 1px solid var(--border);
-      background: #0d1326;
-      color: var(--text);
-      font: inherit;
-    }
-    .field-help { color: var(--muted); font-size: 12px; margin-top: 4px; }
-    .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 16px; }
-    .card {
-      background: rgba(21,27,47,0.9);
-      border: 1px solid var(--border);
-      border-radius: 20px;
-      padding: 18px;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.18);
-    }
-    .span-3 { grid-column: span 3; }
-    .span-4 { grid-column: span 4; }
-    .span-6 { grid-column: span 6; }
-    .span-8 { grid-column: span 8; }
-    .span-12 { grid-column: span 12; }
-    .kpi-label { color: var(--muted); font-size: 13px; margin-bottom: 8px; }
-    .kpi-value { font-size: 34px; font-weight: 700; letter-spacing: -0.02em; }
-    .kpi-small { color: var(--muted); margin-top: 6px; font-size: 14px; }
-    .section-title { font-size: 18px; font-weight: 700; margin-bottom: 12px; }
-    .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-    .metric-box {
-      background: var(--panel-2);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 12px;
-    }
-    .metric-box .label { color: var(--muted); font-size: 12px; margin-bottom: 6px; }
-    .metric-box .value { font-size: 24px; font-weight: 700; }
-    .flags { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-    .flag { padding: 14px; border-radius: 16px; text-align: center; border: 1px solid var(--border); background: var(--panel-2); }
-    .flag .title { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
-    .flag .value { font-size: 20px; font-weight: 800; }
-    .chart {
-      width: 100%;
-      height: 280px;
-      background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.00));
-      border-radius: 18px;
-      border: 1px solid var(--border);
-      padding: 8px;
-    }
-    table { width: 100%; border-collapse: collapse; font-size: 14px; }
-    th, td { padding: 10px 8px; border-bottom: 1px solid var(--border); text-align: left; }
-    th { color: var(--muted); font-weight: 600; }
-    .chart-meta { display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-bottom: 10px; }
-    .chart-caption { color: var(--muted); font-size: 12px; }
-    .chart-legend { display:flex; gap:12px; align-items:center; flex-wrap:wrap; color: var(--muted); font-size: 12px; }
-    .chart-legend span { display:inline-flex; gap:6px; align-items:center; }
-    .chart-legend i { width:18px; height:3px; border-radius:999px; display:inline-block; }
-    .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
-    select, button {
-      background: var(--panel-2);
-      color: var(--text);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 10px 12px;
-      font: inherit;
-    }
-    button { cursor: pointer; }
-    button:hover { border-color: var(--accent); }
-    button:disabled, input:disabled { opacity: 0.55; cursor: not-allowed; }
-    textarea {
-      width: 100%;
-      min-height: 280px;
-      background: #0d1326;
-      color: var(--text);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 14px;
-      font: 13px/1.45 Consolas, monospace;
-      resize: vertical;
-    }
-    .hint { color: var(--muted); font-size: 13px; margin-top: 8px; }
-    .history-hint { color: var(--muted); font-size: 12px; margin-bottom: 10px; }
-    .history-row { cursor: pointer; transition: background 120ms ease, transform 120ms ease; }
-    .history-row:hover { background: rgba(122,162,255,0.08); }
-    .history-row.is-active { background: rgba(122,162,255,0.16); box-shadow: inset 3px 0 0 var(--accent); }
-    @media (max-width: 900px) {
-      .auth-grid { grid-template-columns: 1fr; }
-      .span-3, .span-4, .span-6, .span-8, .span-12 { grid-column: span 12; }
-      .metrics, .flags { grid-template-columns: repeat(2, 1fr); }
-      #unitsList { grid-template-columns: 1fr !important; }
-    }
-  </style>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-</head>
-<body>
-<div class="wrap">
-<h1>Garmin Training Dashboard</h1>
-<div class="sub">Readiness, 7d/28d Load, konkrete Einheiten und KI-Prompt aus Supabase</div>
-<div class="auth-grid">
-  <div id="authBox" class="card auth-panel">
-    <h2 style="margin-top:0;">App-Konto</h2>
-    <div class="field">
-      <label for="loginEmail">E-Mail fuer dein Dashboard-Konto</label>
-      <input id="loginEmail" type="email" placeholder="name@example.com">
-    </div>
-    <div class="field">
-      <label for="loginPassword">Passwort fuer dein Dashboard-Konto</label>
-      <input id="loginPassword" type="password" placeholder="Dein Supabase-Passwort">
-      <div class="field-help">Mit diesen Daten meldest du dich an der App an, nicht bei Garmin.</div>
-    </div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;">
-      <button id="loginBtn" onclick="login()">Login</button>
-      <button id="signupBtn" onclick="signup()">Registrieren</button>
-      <button id="logoutBtn" onclick="logout()" style="display:none;">Logout</button>
-    </div>
-    <div id="authStatus" style="margin-top:10px;color:#a8b3d1;">Nicht eingeloggt</div>
-  </div>
-  <div id="garminBox" class="card auth-panel">
-    <h2 style="margin-top:0;">Garmin Connect</h2>
-    <div class="field">
-      <label for="garminEmail">Garmin Connect E-Mail</label>
-      <input id="garminEmail" type="email" placeholder="dein-garmin-login@example.com" disabled>
-    </div>
-    <div class="field">
-      <label for="garminPassword">Garmin Connect Passwort</label>
-      <input id="garminPassword" type="password" placeholder="Dein Garmin-Passwort" disabled>
-      <div class="field-help">Diese Daten werden verschluesselt pro Benutzer gespeichert und nur fuer Garmin-Syncs verwendet.</div>
-    </div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;">
-      <button id="connectGarminBtn" onclick="connectGarmin()" disabled>Garmin speichern</button>
-      <button id="updateBtn" onclick="updateData()" disabled>Daten aktualisieren</button>
-      <button id="backfillBtn" onclick="backfillData()" disabled>Backfill 28 Tage</button>
-    </div>
-    <div id="garminStatus" style="margin-top:10px;color:#a8b3d1;">Bitte zuerst einloggen, um Garmin zu verbinden.</div>
-  </div>
-</div>
-<script>
-const SUPABASE_URL = "{{ supabase_url }}";
-const SUPABASE_ANON_KEY = "{{ supabase_anon_key }}";
-const MISSING_PUBLIC_CONFIG = {{ missing_public_config | tojson }};
-
-const supabaseClient = window.supabase && SUPABASE_URL && SUPABASE_ANON_KEY
-  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      auth: {
-        detectSessionInUrl: true,
-        persistSession: true,
-        autoRefreshToken: true
-      }
-    })
-  : null;
-let currentSession = null;
-
-function missingConfigMessage() {
-  if (MISSING_PUBLIC_CONFIG.length) {
-    return `Supabase-Konfiguration fehlt: ${MISSING_PUBLIC_CONFIG.join(", ")}`;
-  }
-  return "Supabase-Konfiguration fehlt.";
-}
-
-function requireSupabaseClient() {
-  if (!supabaseClient) {
-    throw new Error(missingConfigMessage());
-  }
-  return supabaseClient;
-}
-
-function authRedirectUrl() {
-  const url = new URL(window.location.href);
-  url.hash = "";
-  url.search = "";
-  return url.toString();
-}
-
-function setControlsDisabled(disabled) {
-  ["garminEmail", "garminPassword", "connectGarminBtn", "updateBtn", "backfillBtn"].forEach((id) => {
-    const node = el(id);
-    if (node) node.disabled = disabled;
-  });
-}
-
-function setAuthUi(user) {
-  const loggedIn = !!user;
-  el("loginEmail").style.display = loggedIn ? "none" : "block";
-  el("loginPassword").style.display = loggedIn ? "none" : "block";
-  el("loginBtn").style.display = loggedIn ? "none" : "inline-block";
-  el("signupBtn").style.display = loggedIn ? "none" : "inline-block";
-  el("logoutBtn").style.display = loggedIn ? "inline-block" : "none";
-  setControlsDisabled(!loggedIn);
-}
-
-async function getToken() {
-  requireSupabaseClient();
-  return currentSession?.access_token || null;
-}
-
-async function apiGet(url) {
-  const token = await getToken();
-  if (!token) {
-    throw new Error("Bitte zuerst einloggen.");
-  }
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` }
-  });
-
-  const json = await res.json().catch(() => ({}));
-
-  if (!res.ok) {
-    throw new Error(json.error || `HTTP ${res.status}`);
-  }
-
-  return json;
-}
-
-async function apiPost(url, body = null) {
-  const token = await getToken();
-  if (!token) {
-    throw new Error("Bitte zuerst einloggen.");
-  }
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-       Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json"
-    },
-    body: body ? JSON.stringify(body) : null
-  });
-
-  const json = await res.json().catch(() => ({}));
-
-  if (!res.ok) {
-    throw new Error(json.error || `HTTP ${res.status}`);
-  }
-
-  return json;
-}
-
-async function refreshAuthStatus() {
-  if (!supabaseClient) {
-    document.getElementById("authStatus").textContent = missingConfigMessage();
-    setAuthUi(null);
-    return;
-  }
-
-  const user = currentSession?.user || null;
-  setAuthUi(user);
-
-  document.getElementById("authStatus").textContent = user
-    ? `Eingeloggt als ${user.email}`
-    : "Nicht eingeloggt";
-}
-
-function clearDashboard() {
-  dashboardData = null;
-  selectedDate = null;
-  el("currentDayLabel").textContent = "Ausgewaehlter Tag";
-  el("todayDate").textContent = "-";
-  el("currentDayHint").textContent = "noch kein Tag ausgewaehlt";
-  el("todayReadiness").textContent = "-";
-  el("todayReadiness").style.color = "#a8b3d1";
-  el("todayRatio").textContent = "-";
-  el("todayRatio").style.color = "#a8b3d1";
-  el("todayRatioLabel").textContent = "-";
-  el("todayRec").textContent = "-";
-  el("mRestingHr").textContent = "-";
-  el("mHrv").textContent = "-";
-  el("mResp").textContent = "-";
-  el("mSleep").textContent = "-";
-  el("flagEasy").textContent = "-";
-  el("flagQuality").textContent = "-";
-  el("flagStrength").textContent = "-";
-  el("flagMax").textContent = "-";
-  el("activitiesTitle").textContent = "Einheiten des ausgewaehlten Tages";
-  el("todayActivitiesTable").innerHTML = `<tr><td colspan="9">Bitte einloggen, um Trainingsdaten zu sehen.</td></tr>`;
-  el("unitsIntro").textContent = "Bitte einloggen, um Empfehlungen zu sehen.";
-  el("unitsList").innerHTML = "";
-  el("historyTable").innerHTML = `<tr><td colspan="7">Bitte einloggen, um Verlauf zu sehen.</td></tr>`;
-  el("aiPrompt").value = "";
-  el("readinessChart").innerHTML = "";
-  el("loadChart").innerHTML = "";
-}
-
-function setLoggedOutState() {
-  clearDashboard();
-  el("garminStatus").textContent = "Bitte einloggen, um Garmin zu verbinden und Daten zu laden.";
-}
-
-function setNoDataState() {
-  clearDashboard();
-  el("todayActivitiesTable").innerHTML = `<tr><td colspan="9">Noch keine Trainingsdaten vorhanden.</td></tr>`;
-  el("unitsIntro").textContent = "Noch keine Empfehlungen verfugbar. Erst Garmin verbinden und Daten laden.";
-  el("historyTable").innerHTML = `<tr><td colspan="7">Noch keine Historie vorhanden.</td></tr>`;
-  el("aiPrompt").value = "Noch keine Trainingsdaten verfugbar.";
-  el("garminStatus").textContent = "Noch keine Trainingsdaten vorhanden. Garmin verbinden und anschliessend Update oder Backfill starten.";
-}
-
-function isAuthError(message) {
-  return typeof message === "string" && (
-    message.includes("einloggen") ||
-    message.includes("missing token") ||
-    message.includes("invalid token")
-  );
-}
-
-function chartPointY(value, minY, maxY, top, plotHeight) {
-  const range = Math.max(1, maxY - minY);
-  return top + ((maxY - value) / range) * plotHeight;
-}
-
-async function login() {
-  const email = document.getElementById("loginEmail").value;
-  const password = document.getElementById("loginPassword").value;
-
-  const { error } = await requireSupabaseClient().auth.signInWithPassword({ email, password });
-
-  if (error) {
-    alert(error.message);
-    return;
-  }
-
-  document.getElementById("authStatus").textContent = "Anmeldung erfolgreich, Session wird geladen...";
-}
-
-async function loadDashboard() {
-  try {
-    const data = await apiGet("/api/dashboard");
-    if (!data || !data.latest || !Array.isArray(data.series) || !data.series.length) {
-      setNoDataState();
-      return;
-    }
-    render(data);
-    document.getElementById("garminStatus").textContent = "Dashboard geladen.";
-  } catch (e) {
-    console.error(e);
-     if (isAuthError(e.message)) {
-      setLoggedOutState();
-      return;
-    }
-    document.getElementById("garminStatus").textContent = `Fehler: ${e.message}`;
-  }
-}
-
-async function signup() {
-  const email = document.getElementById("loginEmail").value;
-  const password = document.getElementById("loginPassword").value;
-
-  const { error } = await requireSupabaseClient().auth.signUp({
-    email,
-    password,
-    options: {
-      emailRedirectTo: authRedirectUrl()
-    }
-  });
-
-  if (error) {
-    alert(error.message);
-    return;
-  }
-
-  alert(`Registrierung gestartet. Je nach Supabase-Einstellung musst du evtl. deine E-Mail bestätigen. Der Bestätigungslink soll auf ${authRedirectUrl()} zurückkommen. Wenn du danach nicht automatisch eingeloggt bist, melde dich hier manuell an.`);
-  await refreshAuthStatus();
-}
-
-async function logout() {
-  if (supabaseClient) {
-    await supabaseClient.auth.signOut();
-  }
-  currentSession = null;
-  await refreshAuthStatus();
-  setLoggedOutState();
-}
-
-async function updateData() {
-  try {
-    await apiPost("/api/update");
-    await loadDashboard();
-    document.getElementById("garminStatus").textContent = "Update erfolgreich.";
-  } catch (e) {
-    alert(e.message);
-  }
-}
-
-async function connectGarmin() {
-  try {
-    const email = document.getElementById("garminEmail").value;
-    const password = document.getElementById("garminPassword").value;
-
-    if (!email || !password) {
-      document.getElementById("garminStatus").textContent = "Bitte Garmin E-Mail und Passwort eingeben.";
-      return;
-    }
-
-    document.getElementById("garminStatus").textContent = "Pruefe Garmin Zugangsdaten...";
-    await apiPost("/api/garmin/connect", { email, password });
-    document.getElementById("garminStatus").textContent = "Garmin Zugangsdaten gespeichert.";
-  } catch (e) {
-    document.getElementById("garminStatus").textContent = `Fehler: ${e.message}`;
-  }
-}
-
-async function backfillData() {
-  try {
-    await apiPost("/api/backfill?days=28");
-    await loadDashboard();
-    document.getElementById("garminStatus").textContent = "Backfill erfolgreich.";
-  } catch (e) {
-    document.getElementById("garminStatus").textContent = `Fehler: ${e.message}`;
-  }
-}
-
-</script>
-    <div class="grid">
-      <div class="card span-3">
-        <div class="kpi-label" id="currentDayLabel">Ausgewaehlter Tag</div>
-        <div class="kpi-value" id="todayDate">-</div>
-        <div class="kpi-small" id="currentDayHint">letzter verfügbarer Tag</div>
-      </div>
-
-      <div class="card span-3">
-        <div class="kpi-label">Readiness</div>
-        <div class="kpi-value" id="todayReadiness">-</div>
-        <div class="kpi-small">vereinfachter Score 1–99</div>
-      </div>
-
-      <div class="card span-3">
-        <div class="kpi-label">7d / 28d Ratio</div>
-        <div class="kpi-value" id="todayRatio">-</div>
-        <div class="kpi-small" id="todayRatioLabel">-</div>
-      </div>
-
-      <div class="card span-3">
-        <div class="kpi-label">Empfehlung</div>
-        <div class="kpi-value" style="font-size:22px;line-height:1.2" id="todayRec">-</div>
-        <div class="kpi-small">je nach ausgewähltem Modus</div>
-      </div>
-
-      <div class="card span-8">
-        <div class="section-title">Readiness Verlauf</div>
-        <div class="chart-meta">
-          <div class="chart-caption">Y-Achse: Readiness-Score, X-Achse: Datum der letzten 21 Tage</div>
-          <div class="chart-legend">
-            <span><i style="background:#35c759;"></i>Readiness</span>
-            <span><i style="background:rgba(122,162,255,0.6);"></i>Ausgewaehlter Tag</span>
-          </div>
-        </div>
-        <svg id="readinessChart" class="chart" viewBox="0 0 800 280" preserveAspectRatio="none"></svg>
-      </div>
-
-      <div class="card span-4">
-        <div class="section-title">Morgenwerte heute</div>
-        <div class="metrics">
-          <div class="metric-box">
-            <div class="label">Ruhepuls</div>
-            <div class="value" id="mRestingHr">-</div>
-          </div>
-          <div class="metric-box">
-            <div class="label">HRV</div>
-            <div class="value" id="mHrv">-</div>
-          </div>
-          <div class="metric-box">
-            <div class="label">Atmung</div>
-            <div class="value" id="mResp">-</div>
-          </div>
-          <div class="metric-box">
-            <div class="label">Schlaf</div>
-            <div class="value" id="mSleep">-</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="card span-8">
-        <div class="section-title">Load Verlauf</div>
-        <div class="chart-meta">
-          <div class="chart-caption">Y-Achse: Trainingslast, X-Achse: Datum der letzten 21 Tage</div>
-          <div class="chart-legend">
-            <span><i style="background:#7aa2ff;"></i>Tages-Load</span>
-            <span><i style="background:#ffcc00;"></i>7d Load</span>
-            <span><i style="background:rgba(122,162,255,0.6);"></i>Ausgewaehlter Tag</span>
-          </div>
-        </div>
-        <svg id="loadChart" class="chart" viewBox="0 0 800 280" preserveAspectRatio="none"></svg>
-      </div>
-
-      <div class="card span-4">
-        <div class="section-title">Trainings-Ampel</div>
-        <div class="flags">
-          <div class="flag">
-            <div class="title">Locker</div>
-            <div class="value" id="flagEasy">-</div>
-          </div>
-          <div class="flag">
-            <div class="title">Qualität</div>
-            <div class="value" id="flagQuality">-</div>
-          </div>
-          <div class="flag">
-            <div class="title">Schwer Kraft</div>
-            <div class="value" id="flagStrength">-</div>
-          </div>
-          <div class="flag">
-            <div class="title">Max Test</div>
-            <div class="value" id="flagMax">-</div>
-          </div>
-        </div>
-      </div>
-<div class="card span-12">
-  <div class="section-title" id="activitiesTitle">Einheiten des ausgewaehlten Tages</div>
-  <table>
-    <thead>
-      <tr>
-        <th>Start</th>
-        <th>Typ</th>
-        <th>Name</th>
-        <th>Dauer</th>
-        <th>ØHF</th>
-        <th>MaxHF</th>
-        <th>TEa</th>
-        <th>TEan</th>
-        <th>Load</th>
-      </tr>
-    </thead>
-    <tbody id="todayActivitiesTable"></tbody>
-  </table>
-</div>
-      <div class="card span-12">
-        <div class="section-title">Empfohlene Einheiten</div>
-        <div class="hint" id="unitsIntro">Konkrete Optionen passend zum gewählten Modus.</div>
-        <div id="unitsList" style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:14px;"></div>
-      </div>
-
-      <div class="card span-12">
-        <div class="section-title">KI-Prompt</div>
-        <div class="toolbar">
-          <label for="modeSelect">Modus</label>
-          <select id="modeSelect">
-            <option value="hybrid">hybrid</option>
-            <option value="run">run</option>
-            <option value="bike">bike</option>
-            <option value="strength">strength</option>
-          </select>
-          <button id="copyPromptBtn">Prompt kopieren</button>
-        </div>
-        <textarea id="aiPrompt" spellcheck="false"></textarea>
-        <div class="hint">Der Prompt nutzt nur die wichtigsten Entscheidungsdaten und ist für eine knappe KI-Empfehlung formuliert.</div>
-      </div>
-
-      <div class="card span-12">
-        <div class="section-title">Letzte Tage</div>
-        <div class="history-hint">Klick auf eine Zeile, um diesen Tag oben im Dashboard anzuzeigen.</div>
-        <table>
-          <thead>
-            <tr>
-              <th>Datum</th>
-              <th>Readiness</th>
-              <th>Tages-Load</th>
-              <th>7d Load</th>
-              <th>28d Load</th>
-              <th>Ratio</th>
-              <th>Empfehlung</th>
-            </tr>
-          </thead>
-          <tbody id="historyTable"></tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-
-<script>
-function el(id) { return document.getElementById(id); }
-
-let dashboardData = null;
-let selectedDate = null;
-
-function getSelectedSeriesItem(data = dashboardData) {
-  if (!data || !Array.isArray(data.series) || !data.series.length) {
-    return null;
-  }
-
-  const fallback = data.latest || data.series[data.series.length - 1];
-  if (!selectedDate) {
-    selectedDate = fallback?.date || null;
-  }
-
-  const selectedItem = data.series.find((item) => item.date === selectedDate);
-  if (selectedItem) {
-    return selectedItem;
-  }
-
-  selectedDate = fallback?.date || null;
-  return fallback || null;
-}
-
-function selectDay(day) {
-  selectedDate = day;
-  if (dashboardData) {
-    render(dashboardData);
-  }
-}
-
-function scoreColor(v) {
-  if (v == null) return "#a8b3d1";
-  if (v < 40) return "#ff453a";
-  if (v < 60) return "#ffcc00";
-  return "#35c759";
-}
-
-function ratioColor(v) {
-  if (v == null) return "#a8b3d1";
-  if (v > 1.5) return "#ff453a";
-  if (v > 1.3 || v < 0.8) return "#ffcc00";
-  return "#35c759";
-}
-
-function buildFlags(item) {
-  const score = item.readiness;
-  const ratio = item.ratio;
-  let flags = { easy: "JA", quality: "NEIN", strength: "NEIN", max: "NEIN" };
-  if (score == null) return flags;
-  if (ratio != null && ratio > 1.5) return flags;
-  if (score >= 60) flags.quality = "JA";
-  if (score >= 60) flags.strength = "JA";
-  if (score >= 82) flags.max = "JA";
-  return flags;
-}
-
-function polylinePath(data, valueKey, minY, maxY, left, top, plotWidth, plotHeight) {
-  const valid = data.filter(d => d[valueKey] != null);
-  if (!valid.length) return "";
-  const xStep = data.length > 1 ? plotWidth / (data.length - 1) : 0;
-  const range = Math.max(1, maxY - minY);
-  return data.map((d, i) => {
-    const v = d[valueKey];
-    if (v == null) return null;
-    const x = left + i * xStep;
-    const y = top + ((maxY - v) / range) * plotHeight;
-    return `${x},${y}`;
-  }).filter(Boolean).join(" ");
-}
-
-function drawChart(svgId, data, lines, options = {}) {
-  const svg = el(svgId);
-  const width = 800;
-  const height = 280;
-  const left = 48;
-  const right = 18;
-  const top = 22;
-  const bottom = 30;
-  const plotWidth = width - left - right;
-  const plotHeight = height - top - bottom;
-
-  let values = [];
-  lines.forEach(line => {
-    data.forEach(d => {
-      const v = d[line.key];
-      if (v != null) values.push(v);
-    });
-  });
-
-  if (!values.length) {
-    svg.innerHTML = "";
-    return;
-  }
-
-  const minValue = Math.min(...values);
-  const maxValue = Math.max(...values);
-  const paddingValue = Math.max(1, (maxValue - minValue) * 0.1);
-  const minY = minValue - paddingValue;
-  const maxY = maxValue + paddingValue;
-  const xStep = data.length > 1 ? plotWidth / (data.length - 1) : 0;
-  const selectedIndex = options.selectedDate ? data.findIndex(d => d.date === options.selectedDate) : -1;
-
-  let html = "";
-  for (let i = 0; i < 4; i++) {
-    const y = top + (plotHeight / 3) * i;
-    const value = maxY - ((maxY - minY) / 3) * i;
-    html += `<line x1="${left}" y1="${y}" x2="${width-right}" y2="${y}" stroke="rgba(255,255,255,0.08)" stroke-width="1" />`;
-    html += `<text x="${left-8}" y="${y+4}" font-size="10" text-anchor="end" fill="#a8b3d1">${Math.round(value)}</text>`;
-  }
-
-  if (selectedIndex >= 0) {
-    const selectedX = left + selectedIndex * xStep;
-    html += `<line x1="${selectedX}" y1="${top}" x2="${selectedX}" y2="${height-bottom}" stroke="rgba(122,162,255,0.55)" stroke-width="2" stroke-dasharray="4 4" />`;
-  }
-
-  lines.forEach(line => {
-    const pts = polylinePath(data, line.key, minY, maxY, left, top, plotWidth, plotHeight);
-    if (pts) {
-      html += `<polyline fill="none" stroke="${line.color}" stroke-width="3" points="${pts}" />`;
-    }
-
-    if (selectedIndex >= 0) {
-      const selectedValue = data[selectedIndex]?.[line.key];
-      if (selectedValue != null) {
-        const x = left + selectedIndex * xStep;
-        const y = chartPointY(selectedValue, minY, maxY, top, plotHeight);
-        html += `<circle cx="${x}" cy="${y}" r="4.5" fill="${line.color}" stroke="#0b1020" stroke-width="2" />`;
-      }
-    }
-  });
-
-  data.forEach((d, i) => {
-    const x = left + i * xStep;
-    const fill = d.date === options.selectedDate ? "#ecf1ff" : "#a8b3d1";
-    html += `<text x="${x}" y="${height-8}" font-size="10" text-anchor="middle" fill="${fill}">${d.date.slice(5)}</text>`;
-  });
-
-  svg.innerHTML = html;
-}
-
-function modeRecommendation(item, mode) {
-  if (mode === "run") return item.recommendation_run;
-  if (mode === "bike") return item.recommendation_bike;
-  if (mode === "strength") return item.recommendation_strength;
-  return item.recommendation_hybrid;
-}
-
-function modeUnits(item, mode) {
-  if (mode === "run") return item.units_run || [];
-  if (mode === "bike") return item.units_bike || [];
-  if (mode === "strength") return item.units_strength || [];
-  return item.units_hybrid || [];
-}
-
-async function updatePrompt() {
-  const selectedItem = getSelectedSeriesItem();
-  if (!dashboardData || !selectedItem) return;
-  const mode = el("modeSelect").value;
-
-  try {
-    const data = await apiGet(`/api/ai-prompt?mode=${encodeURIComponent(mode)}&date=${encodeURIComponent(selectedItem.date)}`);
-    el("aiPrompt").value = data.prompt || "";
-    el("todayRec").textContent = modeRecommendation(selectedItem, mode) || "-";
-  } catch (e) {
-    el("aiPrompt").value = `Fehler: ${e.message}`;
-  }
-}
-
-function render(data) {
-  dashboardData = data;
-  const active = getSelectedSeriesItem(data);
-  const latest = data.latest || active;
-  if (!active || !latest) return;
-
-  const activeIsLatest = active.date === latest.date;
-  el("currentDayLabel").textContent = activeIsLatest ? "Aktiver Tag" : "Ausgewaehlter Tag";
-  el("currentDayHint").textContent = activeIsLatest ? "letzter verfuegbarer Tag" : "aus Tabelle ausgewaehlt";
-  el("todayDate").textContent = active.date;
-  el("todayReadiness").textContent = active.readiness ?? "-";
-  el("todayReadiness").style.color = scoreColor(active.readiness);
-
-  el("todayRatio").textContent = active.ratio ?? "-";
-  el("todayRatio").style.color = ratioColor(active.ratio);
-  el("todayRatioLabel").textContent = active.ratio_label ?? "-";
-
-  el("mRestingHr").textContent = active.resting_hr ?? "-";
-  el("mHrv").textContent = active.hrv ?? "-";
-  el("mResp").textContent = active.respiration ?? "-";
-  el("mSleep").textContent = active.sleep_h ?? "-";
-
-  const flags = buildFlags(active);
-  el("flagEasy").textContent = flags.easy;
-  el("flagQuality").textContent = flags.quality;
-  el("flagStrength").textContent = flags.strength;
-  el("flagMax").textContent = flags.max;
-
-  el("activitiesTitle").textContent = `Einheiten am ${active.date}`;
-const acts = active.activities || [];
-
-el("todayActivitiesTable").innerHTML = acts.length
-  ? acts.map(a => `
-    <tr>
-      <td>${a.start_local || "-"}</td>
-      <td>${a.type_key || "-"}</td>
-      <td>${a.name || "-"}</td>
-      <td>${a.duration_min ?? "-"}</td>
-      <td>${a.avg_hr ?? "-"}</td>
-      <td>${a.max_hr ?? "-"}</td>
-      <td>${a.aerobic_te ?? "-"}</td>
-      <td>${a.anaerobic_te ?? "-"}</td>
-      <td>${a.training_load ?? "-"}</td>
-    </tr>
-  `).join("")
-  : `<tr><td colspan="9">Keine Einheiten für diesen Tag vorhanden.</td></tr>`;
-  
-  drawChart("readinessChart", data.series.slice(-21), [
-    { key: "readiness", color: "#35c759" }
-  ], { selectedDate: active.date });
-
-  drawChart("loadChart", data.series.slice(-21), [
-    { key: "load_day", color: "#7aa2ff" },
-    { key: "load_7d", color: "#ffcc00" }
-  ], { selectedDate: active.date });
-
-  const mode = el("modeSelect").value;
-  el("todayRec").textContent = modeRecommendation(active, mode) || "-";
-
-  const units = modeUnits(active, mode);
-  const modeLabel = mode === "hybrid" ? "hybrid = run + bike + strength" : mode;
-  el("unitsIntro").textContent = `Konkrete Optionen passend zum gewählten Modus (${modeLabel}).`;
-  el("unitsList").innerHTML = units.map((u, idx) => `
-    <div style="background:var(--panel-2);border:1px solid var(--border);border-radius:16px;padding:14px;">
-      <div style="color:var(--muted);font-size:12px;margin-bottom:8px;">Option ${idx + 1}</div>
-      <div style="font-weight:700;line-height:1.4;">${u}</div>
-    </div>
-  `).join("");
-
-  const rows = data.series.slice().reverse().slice(0, 14).map(d => `
-    <tr class="history-row${d.date === active.date ? " is-active" : ""}" onclick="selectDay('${d.date}')">
-      <td>${d.date}</td>
-      <td style="color:${scoreColor(d.readiness)};font-weight:700">${d.readiness ?? "-"}</td>
-      <td>${d.load_day}</td>
-      <td>${d.load_7d}</td>
-      <td>${d.load_28d}</td>
-      <td style="color:${ratioColor(d.ratio)};font-weight:700">${d.ratio ?? "-"}</td>
-      <td>${modeRecommendation(d, mode)}</td>
-    </tr>
-  `).join("");
-
-  el("historyTable").innerHTML = rows;
-  updatePrompt();
-}
-
-el("modeSelect").addEventListener("change", () => {
-  if (dashboardData) render(dashboardData);
-});
-
-el("copyPromptBtn").addEventListener("click", async () => {
-  try {
-    await navigator.clipboard.writeText(el("aiPrompt").value);
-    el("copyPromptBtn").textContent = "Kopiert";
-    setTimeout(() => el("copyPromptBtn").textContent = "Prompt kopieren", 1200);
-  } catch (e) {
-    el("copyPromptBtn").textContent = "Fehler";
-    setTimeout(() => el("copyPromptBtn").textContent = "Prompt kopieren", 1200);
-  }
-});
-
-if (supabaseClient) {
-  supabaseClient.auth.onAuthStateChange((_event, session) => {
-    currentSession = session || null;
-    const user = currentSession?.user || null;
-    setAuthUi(user);
-    document.getElementById("authStatus").textContent = user
-      ? `Eingeloggt als ${user.email}`
-      : "Nicht eingeloggt";
-
-    window.setTimeout(async () => {
-      if (currentSession?.access_token) {
-        await loadDashboard();
-      } else {
-        setLoggedOutState();
-      }
-    }, 0);
-  });
-}
-
-(async () => {
-  setAuthUi(null);
-  if (!supabaseClient) {
-    clearDashboard();
-    el("garminStatus").textContent = missingConfigMessage();
-    return;
-  }
-  document.getElementById("authStatus").textContent = "Pruefe Anmeldung...";
-  setLoggedOutState();
-})();
-</script>
-</body>
-</html>
-"""
-
-
-def _mode_or_default(value: Optional[str]) -> str:
-    return value if value in {"hybrid", "run", "bike", "strength"} else "hybrid"
-
-
-def _fetch_rows(user_id: str, limit: int = 120) -> List[Dict[str, Any]]:
-    query = (
-        supabase.table("training_days")
-        .select("user_id,date,data")
-        .eq("user_id", user_id)
-        .order("date", desc=True)
-    )
-    if limit > 0:
-        query = query.limit(limit)
-
-    res = query.execute()
-    rows = res.data or []
-    rows.sort(key=lambda row: row.get("date") or "")
-    return rows
-
-
-def _history_from_rows(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
-    history: Dict[str, Any] = {"days": {}}
-    for row in rows:
-        payload = row.get("data") or {}
-        day = payload.get("date") or row.get("date")
-        if not day:
-            continue
-        history["days"][day] = {
-            "morning": payload.get("morning"),
-            "summary": payload.get("summary") or {},
-        }
-    return history
-
-
-def _payload_to_series_item(payload: Dict[str, Any]) -> Dict[str, Any]:
-    morning = payload.get("morning") or {}
-    load_metrics = payload.get("load_metrics") or {}
-    recs = payload.get("recommendations") or {}
-    units = payload.get("units") or {}
-    summary = payload.get("summary") or {}
-    readiness = payload.get("readiness") or {}
-
-    return {
-        "date": payload.get("date"),
-        "readiness": readiness.get("score"),
-        "load_day": summary.get("training_load_sum", 0),
-        "load_7d": load_metrics.get("load_7d"),
-        "load_28d": load_metrics.get("load_28d"),
-        "ratio": load_metrics.get("load_ratio"),
-        "ratio_label": load_metrics.get("load_ratio_label"),
-        "resting_hr": morning.get("resting_hr"),
-        "hrv": morning.get("hrv"),
-        "respiration": morning.get("respiration"),
-        "sleep_h": morning.get("sleep_h"),
-        "spo2": morning.get("pulse_ox"),
-        "recommendation_hybrid": recs.get("hybrid"),
-        "recommendation_run": recs.get("run"),
-        "recommendation_bike": recs.get("bike"),
-        "recommendation_strength": recs.get("strength"),
-        "units_hybrid": units.get("hybrid", []),
-        "units_run": units.get("run", []),
-        "units_bike": units.get("bike", []),
-        "units_strength": units.get("strength", []),
-        "activities": payload.get("activities", []),
-        "recommendation_day": payload.get("recommendation_day"),
-        "ai_prompt": payload.get("ai_prompt"),
-    }
-
-
-def _build_series(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    items: List[Dict[str, Any]] = []
-    for row in rows:
-        payload = row.get("data") or {}
-        if payload.get("date"):
-            items.append(_payload_to_series_item(payload))
-    items.sort(key=lambda item: item["date"])
-    return items
-
-
-def _build_prompt_from_payload(payload: Optional[Dict[str, Any]], mode: str) -> str:
-    if not payload:
-        return "Keine Daten verfügbar."
-
-    mode = _mode_or_default(mode)
-    recommendation_day = payload.get("recommendation_day") or payload.get("date")
-    morning = payload.get("morning")
-    summary = payload.get("summary") or {}
-    load_metrics = payload.get("load_metrics") or {}
-    activities = [ActivitySummary(**a) for a in (payload.get("activities") or [])]
-    recommendations = payload.get("recommendations") or {}
-    units = (payload.get("units") or {}).get(mode) or (payload.get("units") or {}).get("hybrid", [])
-
-    return report_build_ai_prompt(
-        mode=mode,
-        recommendation_day=recommendation_day,
-        today_day=payload.get("date"),
-        latest_morning=None if not morning else type("MorningProxy", (), morning)(),
-        today_summary=summary,
-        today_load_metrics=load_metrics,
-        today_activities=activities,
-        dashboard_recommendations=recommendations,
-        units=units,
-    )
-
-
-def _payload_for_date(rows: List[Dict[str, Any]], selected_date: Optional[str]) -> Optional[Dict[str, Any]]:
-    if selected_date:
-        for row in rows:
-            payload = row.get("data") or {}
-            row_date = payload.get("date") or row.get("date")
-            if row_date == selected_date:
-                return payload
-    return rows[-1].get("data") if rows else None
-
-
-def _upsert_payload(user_id: str, payload: Dict[str, Any]) -> None:
-    (
-        supabase.table("training_days")
-        .upsert(
-            {
-                "user_id": user_id,
-                "date": payload["date"],
-                "data": payload,
-            },
-            on_conflict="user_id,date",
-        )
-        .execute()
-    )
-
-
-def _set_garmin_sync_state(
-    user_id: str,
-    *,
-    sync_status: Optional[str] = None,
-    sync_error: Optional[str] = None,
-    last_sync_at: Optional[str] = None,
-) -> None:
-    updates: Dict[str, Any] = {}
-    if sync_status is not None:
-        updates["sync_status"] = sync_status
-    if sync_error is not None or sync_status == "ok":
-        updates["sync_error"] = sync_error
-    if last_sync_at is not None:
-        updates["last_sync_at"] = last_sync_at
-
-    if not updates:
-        return
-
-    (
-        supabase.table("user_garmin_accounts")
-        .update(updates)
-        .eq("user_id", user_id)
-        .execute()
-    )
-
-
-def _clear_garmin_tokens(user_id: str) -> None:
-    tokens_path = get_tokens_path(user_id)
-    try:
-        if tokens_path.parent.exists():
-            shutil.rmtree(tokens_path.parent, ignore_errors=True)
-    except Exception:
-        pass
-
-
-def _garmin_error_message(exc: Exception) -> str:
-    message = str(exc).strip()
-    if "Authentication failed" in message or "401 Client Error" in message:
-        return "Garmin Anmeldung fehlgeschlagen. Bitte Garmin E-Mail und Passwort prüfen."
-    return message or "Garmin Fehler"
-
-
-def _is_garmin_auth_error(exc: Exception) -> bool:
-    message = str(exc)
-    return "Authentication failed" in message or "401 Client Error" in message
-
-
-def _parse_backfill_days(raw_value: str) -> int:
-    try:
-        days = int(raw_value)
-    except (TypeError, ValueError):
-        raise ValueError("days must be an integer")
-    return max(1, min(days, 180))
+app = Flask(__name__, template_folder="templates", static_folder="static")
+configure_structured_logging(app.logger)
+LOGGER = get_logger(__name__)
 
 
 def _missing_public_config() -> List[str]:
@@ -1125,47 +48,241 @@ def _missing_public_config() -> List[str]:
     return missing
 
 
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _garmin_error_message(exc: Exception) -> str:
+    message = str(exc).strip()
+    if "Authentication failed" in message or "401 Client Error" in message:
+        return "Garmin Anmeldung fehlgeschlagen. Bitte Garmin E-Mail und Passwort pruefen."
+    return message or "Garmin Fehler"
+
+
+def _is_garmin_auth_error(exc: Exception) -> bool:
+    message = str(exc)
+    return "Authentication failed" in message or "401 Client Error" in message or "unauthorized" in message.lower()
+
+
+def _fetch_rows_for_user(user_id: str, *, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    try:
+        return fetch_training_rows(
+            supabase,
+            user_id,
+            limit=limit if limit is not None else TRAINING_CONFIG.windows.dashboard_history_limit,
+        )
+    except Exception as exc:
+        log_exception(
+            LOGGER,
+            category=ErrorCategory.DB,
+            event="training_days.fetch_failed",
+            message="Failed to fetch dashboard rows.",
+            exc=exc,
+            user_id=user_id,
+        )
+        raise ServiceError(
+            "Dashboard-Daten konnten nicht geladen werden.",
+            status_code=500,
+            category=ErrorCategory.DB,
+            event="training_days.fetch_failed",
+            context={"user_id": user_id},
+        ) from exc
+
+
+def _upsert_user_payload(user_id: str, payload: Dict[str, Any]) -> None:
+    try:
+        upsert_training_payload(supabase, user_id, payload)
+    except Exception as exc:
+        log_exception(
+            LOGGER,
+            category=ErrorCategory.DB,
+            event="training_days.upsert_failed",
+            message="Failed to persist training payload.",
+            exc=exc,
+            user_id=user_id,
+            day=payload.get("date"),
+        )
+        raise ServiceError(
+            "Trainingsdaten konnten nicht gespeichert werden.",
+            status_code=500,
+            category=ErrorCategory.DB,
+            event="training_days.upsert_failed",
+            context={"user_id": user_id, "day": payload.get("date")},
+        ) from exc
+
+
+def _account_summary(user_id: str) -> Dict[str, Any]:
+    account = store.fetch_account(user_id)
+    return account.ui_summary() if account else {"connected": False}
+
+
+def _get_connected_account(user_id: str) -> GarminAccount:
+    account = store.fetch_account(user_id)
+    if not account:
+        raise ServiceError(
+            "garmin not connected",
+            status_code=400,
+            category=ErrorCategory.AUTH,
+            event="garmin.account_missing",
+            context={"user_id": user_id},
+        )
+
+    if not account.credentials():
+        raise ServiceError(
+            "garmin not connected",
+            status_code=400,
+            category=ErrorCategory.AUTH,
+            event="garmin.credentials_missing",
+            context={"user_id": user_id},
+        )
+
+    return account
+
+
+def _build_authenticated_client(user_id: str) -> tuple[Any, GarminAccount]:
+    account = _get_connected_account(user_id)
+    email, password = account.credentials() or ("", "")
+    session_payload = account.session_payload()
+
+    client = load_client(email=email, password=password, session_data=session_payload)
+
+    refreshed_session = export_client_session(client)
+    if refreshed_session:
+        try:
+            store.save_session_atomically(
+                user_id,
+                refreshed_session,
+                expected_version=account.garmin_session_version,
+            )
+        except ServiceError as exc:
+            if exc.status_code == 409:
+                log_event(
+                    LOGGER,
+                    logging.WARNING,
+                    category=ErrorCategory.DB,
+                    event="garmin.session_refresh_conflict",
+                    message="Garmin session refresh conflicted with a parallel request.",
+                    user_id=user_id,
+                )
+            else:
+                raise
+
+    return client, account
+
+
+def _mark_sync_error(user_id: str, message: str) -> None:
+    try:
+        store.mark_sync_state(user_id, sync_status="error", sync_error=message)
+    except ServiceError as exc:
+        log_exception(
+            LOGGER,
+            category=ErrorCategory.DB,
+            event="garmin.sync_error_mark_failed",
+            message="Failed to record Garmin sync error state.",
+            exc=exc,
+            user_id=user_id,
+            original_error=message,
+            level=logging.WARNING,
+        )
+
+
+def _raise_garmin_service_error(user_id: str, exc: Exception, *, event: str, fallback_message: str) -> None:
+    is_auth_error = _is_garmin_auth_error(exc)
+    message = _garmin_error_message(exc) if is_auth_error else fallback_message
+    category = ErrorCategory.AUTH if is_auth_error else ErrorCategory.API
+    status_code = 400 if is_auth_error else 500
+
+    log_exception(
+        LOGGER,
+        category=category,
+        event=event,
+        message="Garmin sync request failed.",
+        exc=exc,
+        user_id=user_id,
+        auth_error=is_auth_error,
+    )
+    _mark_sync_error(user_id, _garmin_error_message(exc))
+
+    if is_auth_error:
+        try:
+            store.clear_session(user_id)
+        except ServiceError as clear_exc:
+            log_exception(
+                LOGGER,
+                category=ErrorCategory.DB,
+                event="garmin.session_clear_failed",
+                message="Failed to clear stale Garmin session after auth error.",
+                exc=clear_exc,
+                user_id=user_id,
+                level=logging.WARNING,
+            )
+
+    raise ServiceError(
+        message,
+        status_code=status_code,
+        category=category,
+        event=event,
+        context={"user_id": user_id},
+    ) from exc
+
+
+@app.errorhandler(ServiceError)
+def handle_service_error(exc: ServiceError):
+    return jsonify({"error": exc.public_message}), exc.status_code
+
+
+@app.errorhandler(Exception)
+def handle_unexpected_error(exc: Exception):
+    log_exception(
+        LOGGER,
+        category=ErrorCategory.API,
+        event="unhandled_exception",
+        message="Unhandled application exception.",
+        exc=exc,
+    )
+    return jsonify({"error": "internal server error"}), 500
+
+
+@app.get("/")
+def index():
+    return render_template(
+        "dashboard.html",
+        supabase_url=os.environ.get("SUPABASE_URL", ""),
+        supabase_anon_key=os.environ.get("SUPABASE_ANON_KEY", ""),
+        missing_public_config=_missing_public_config(),
+        range_filters=list(TRAINING_CONFIG.windows.range_filters),
+        default_range_days=TRAINING_CONFIG.windows.default_dashboard_range,
+    )
+
+
 @app.get("/api/history")
 @require_user
 def api_history():
-    series = _build_series(_fetch_rows(request.user_id, limit=30))
-    return {"rows": list(reversed(series))}
+    rows = _fetch_rows_for_user(request.user_id, limit=90)
+    return jsonify({"rows": list(reversed(build_series(rows)))})
 
 
 @app.get("/api/dashboard")
 @require_user
 def dashboard():
-    rows = _fetch_rows(request.user_id, limit=365)
-    series = _build_series(rows)
-    latest = series[-1] if series else None
-
-    return {
-        "latest": latest,
-        "series": series,
-    }
+    rows = _fetch_rows_for_user(request.user_id)
+    payload = build_dashboard_payload(rows, _account_summary(request.user_id))
+    return jsonify(payload)
 
 
 @app.get("/api/ai-prompt")
 @require_user
 def api_ai_prompt():
-    mode = _mode_or_default(request.args.get("mode", "hybrid"))
-    rows = _fetch_rows(request.user_id, limit=365)
+    mode = mode_or_default(request.args.get("mode", "hybrid"))
+    rows = _fetch_rows_for_user(request.user_id)
     selected_date = request.args.get("date")
-    latest_payload = _payload_for_date(rows, selected_date)
-    return jsonify({
-        "mode": mode,
-        "date": selected_date or (latest_payload or {}).get("date"),
-        "prompt": _build_prompt_from_payload(latest_payload, mode)
-    })
-
-
-@app.get("/")
-def index():
-    return render_template_string(
-        HTML,
-        supabase_url=os.environ.get("SUPABASE_URL", ""),
-        supabase_anon_key=os.environ.get("SUPABASE_ANON_KEY", ""),
-        missing_public_config=_missing_public_config(),
+    latest_payload = payload_for_date(rows, selected_date)
+    return jsonify(
+        {
+            "mode": mode,
+            "date": selected_date or (latest_payload or {}).get("date"),
+            "prompt": build_prompt_from_payload(latest_payload, mode),
+        }
     )
 
 
@@ -1173,16 +290,10 @@ def index():
 @require_user
 def update():
     try:
-        creds = get_garmin_credentials(request.user_id)
-        if not creds:
-            return {"error": "garmin not connected"}, 400
-
-        email, password = creds
-        client = load_client(email=email, password=password, user_id=request.user_id)
-
-        rows = _fetch_rows(request.user_id, limit=365)
-        history = _history_from_rows(rows)
-        recent_activities = get_recent_activities(client, 400)
+        client, _account = _build_authenticated_client(request.user_id)
+        rows = _fetch_rows_for_user(request.user_id)
+        history = history_from_rows(rows)
+        recent_activities = get_recent_activities(client, TRAINING_CONFIG.windows.default_activity_limit)
 
         today = date.today().isoformat()
         payload = main_logic_for_day(
@@ -1194,47 +305,43 @@ def update():
             persist_history=False,
         )
 
-        _upsert_payload(request.user_id, payload)
-        _set_garmin_sync_state(
+        _upsert_user_payload(request.user_id, payload)
+        store.mark_sync_state(
             request.user_id,
             sync_status="ok",
             sync_error=None,
-            last_sync_at=datetime.now(timezone.utc).isoformat(),
+            last_sync_at=_now_iso(),
         )
-        return {"status": "ok", "date": payload["date"]}
-    except RuntimeError as exc:
-        message = _garmin_error_message(exc)
-        _set_garmin_sync_state(request.user_id, sync_status="error", sync_error=message)
-        return {"error": message}, 400
+        return jsonify({"status": "ok", "date": payload["date"]})
+    except ServiceError:
+        raise
     except Exception as exc:
-        if _is_garmin_auth_error(exc):
-            message = _garmin_error_message(exc)
-            _set_garmin_sync_state(request.user_id, sync_status="error", sync_error=message)
-            return {"error": message}, 400
-        app.logger.exception("Garmin update failed for user %s", request.user_id)
-        _set_garmin_sync_state(request.user_id, sync_status="error", sync_error=str(exc))
-        return {"error": "update failed"}, 500
+        _raise_garmin_service_error(
+            request.user_id,
+            exc,
+            event="garmin.update_failed",
+            fallback_message="update failed",
+        )
 
 
 @app.post("/api/backfill")
 @require_user
 def backfill_data():
     try:
-        days = _parse_backfill_days(request.args.get("days", "28"))
+        days = parse_backfill_days(request.args.get("days", str(TRAINING_CONFIG.windows.chronic_load_days)))
     except ValueError as exc:
-        return {"error": str(exc)}, 400
+        raise ServiceError(
+            str(exc),
+            status_code=400,
+            category=ErrorCategory.API,
+            event="garmin.backfill_invalid_days",
+        ) from exc
 
     try:
-        creds = get_garmin_credentials(request.user_id)
-        if not creds:
-            return {"error": "garmin not connected"}, 400
-
-        email, password = creds
-        client = load_client(email=email, password=password, user_id=request.user_id)
-
-        rows = _fetch_rows(request.user_id, limit=365)
-        history = _history_from_rows(rows)
-        recent_activities = get_recent_activities(client, 400)
+        client, _account = _build_authenticated_client(request.user_id)
+        rows = _fetch_rows_for_user(request.user_id)
+        history = history_from_rows(rows)
+        recent_activities = get_recent_activities(client, TRAINING_CONFIG.windows.default_activity_limit)
 
         results: List[str] = []
         for offset in range(days - 1, -1, -1):
@@ -1247,37 +354,30 @@ def backfill_data():
                 recent_activities=recent_activities,
                 persist_history=False,
             )
-
-            _upsert_payload(request.user_id, payload)
+            _upsert_user_payload(request.user_id, payload)
             history["days"][day] = {
                 "morning": payload.get("morning"),
                 "summary": payload.get("summary") or {},
             }
             results.append(day)
 
-        _set_garmin_sync_state(
+        store.mark_sync_state(
             request.user_id,
             sync_status="ok",
             sync_error=None,
-            last_sync_at=datetime.now(timezone.utc).isoformat(),
+            last_sync_at=_now_iso(),
         )
-        return {
-            "status": "backfilled",
-            "days": len(results),
-            "dates": results,
-        }
-    except RuntimeError as exc:
-        message = _garmin_error_message(exc)
-        _set_garmin_sync_state(request.user_id, sync_status="error", sync_error=message)
-        return {"error": message}, 400
+        return jsonify({"status": "backfilled", "days": len(results), "dates": results})
+    except ServiceError:
+        raise
     except Exception as exc:
-        if _is_garmin_auth_error(exc):
-            message = _garmin_error_message(exc)
-            _set_garmin_sync_state(request.user_id, sync_status="error", sync_error=message)
-            return {"error": message}, 400
-        app.logger.exception("Garmin backfill failed for user %s", request.user_id)
-        _set_garmin_sync_state(request.user_id, sync_status="error", sync_error=str(exc))
-        return {"error": "backfill failed"}, 500
+        _raise_garmin_service_error(
+            request.user_id,
+            exc,
+            event="garmin.backfill_failed",
+            fallback_message="backfill failed",
+        )
+
 
 @app.post("/api/garmin/connect")
 @require_user
@@ -1287,58 +387,67 @@ def connect_garmin():
     password = data.get("password")
 
     if not isinstance(email, str) or not isinstance(password, str):
-        return {"error": "email and password are required"}, 400
+        raise ServiceError(
+            "email and password are required",
+            status_code=400,
+            category=ErrorCategory.AUTH,
+            event="garmin.connect_missing_fields",
+        )
 
     email = email.strip()
     password = password.strip()
     if not email or not password:
-        return {"error": "email and password are required"}, 400
-
-    _clear_garmin_tokens(request.user_id)
-    try:
-        load_client(email=email, password=password, user_id=request.user_id)
-    except Exception as exc:
-        _clear_garmin_tokens(request.user_id)
-        return {"error": _garmin_error_message(exc)}, 400
-
-    email_enc = encrypt(email)
-    password_enc = encrypt(password)
-
-    (
-        supabase.table("user_garmin_accounts")
-        .upsert(
-            {
-                "user_id": request.user_id,
-                "garmin_email_enc": email_enc,
-                "garmin_password_enc": password_enc,
-                "sync_status": "connected",
-                "sync_error": None,
-            },
-            on_conflict="user_id",
+        raise ServiceError(
+            "email and password are required",
+            status_code=400,
+            category=ErrorCategory.AUTH,
+            event="garmin.connect_empty_fields",
         )
-        .execute()
-    )
 
-    _clear_garmin_tokens(request.user_id)
-    return {"status": "connected"}
+    try:
+        client = load_client(email=email, password=password)
+        session_payload = export_client_session(client)
+        if not session_payload:
+            raise ServiceError(
+                "Garmin session could not be serialized.",
+                status_code=500,
+                category=ErrorCategory.API,
+                event="garmin.connect_session_missing",
+            )
+
+        store.save_connected_account(request.user_id, email, password, session_payload)
+        log_event(
+            LOGGER,
+            logging.INFO,
+            category=ErrorCategory.AUTH,
+            event="garmin.connect_success",
+            message="Garmin account connected.",
+            user_id=request.user_id,
+        )
+        return jsonify({"status": "connected"})
+    except ServiceError:
+        raise
+    except Exception as exc:
+        message = _garmin_error_message(exc)
+        _mark_sync_error(request.user_id, message)
+        category = ErrorCategory.AUTH if _is_garmin_auth_error(exc) else ErrorCategory.API
+        status_code = 400 if _is_garmin_auth_error(exc) else 500
+        log_exception(
+            LOGGER,
+            category=category,
+            event="garmin.connect_failed",
+            message="Garmin connect request failed.",
+            exc=exc,
+            user_id=request.user_id,
+        )
+        raise ServiceError(
+            message,
+            status_code=status_code,
+            category=category,
+            event="garmin.connect_failed",
+            context={"user_id": request.user_id},
+        ) from exc
 
 
-def get_garmin_credentials(user_id: str) -> Optional[tuple[str, str]]:
-    res = (
-        supabase.table("user_garmin_accounts")
-        .select("user_id,garmin_email_enc,garmin_password_enc")
-        .eq("user_id", user_id)
-        .limit(1)
-        .execute()
-    )
-
-    if not res.data:
-        return None
-
-    row = res.data[0]
-    email = decrypt(row["garmin_email_enc"])
-    password = decrypt(row["garmin_password_enc"])
-    return email, password
-    
 if __name__ == "__main__":
     app.run(debug=True)

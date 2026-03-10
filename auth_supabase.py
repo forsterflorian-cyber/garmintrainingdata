@@ -1,13 +1,17 @@
 import os
+import logging
 from functools import lru_cache, wraps
 
 import jwt
 from flask import jsonify, request
 from jwt import PyJWKClient
 
+from observability import ErrorCategory, get_logger, log_event, log_exception
+
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET")
 SUPPORTED_JWT_ALGORITHMS = {"HS256", "RS256", "ES256"}
+LOGGER = get_logger(__name__)
 
 
 @lru_cache(maxsize=1)
@@ -58,11 +62,28 @@ def require_user(f):
     def wrapper(*args, **kwargs):
         token = _extract_bearer_token()
         if not token:
+            log_event(
+                LOGGER,
+                logging.WARNING,
+                category=ErrorCategory.AUTH,
+                event="auth.missing_token",
+                message="Bearer token missing.",
+                path=request.path,
+            )
             return jsonify({"error": "missing token"}), 401
 
         try:
             payload = _verify_token(token)
-        except Exception:
+        except Exception as exc:
+            log_exception(
+                LOGGER,
+                category=ErrorCategory.AUTH,
+                event="auth.invalid_token",
+                message="Bearer token verification failed.",
+                exc=exc,
+                level=logging.WARNING,
+                path=request.path,
+            )
             return jsonify({"error": "invalid token"}), 401
 
         request.user_id = payload["sub"]

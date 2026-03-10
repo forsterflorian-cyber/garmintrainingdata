@@ -23,10 +23,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import statistics
 import sys
-import hashlib
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -34,16 +34,16 @@ from typing import Any, Dict, List, Optional, Tuple
 
 try:
     from garminconnect import Garmin
-    import garth
 except Exception:
     print("Missing dependency. Install with: python -m pip install garminconnect", file=sys.stderr)
     raise
 
+from observability import ErrorCategory, get_logger, log_event, log_exception
+from training_config import TRAINING_CONFIG
 
-DEFAULT_TOKENS_PATH = os.getenv("GARMIN_TOKENS_PATH", str(Path.home() / ".garminconnect"))
+
 DEFAULT_HISTORY_PATH = "training_history.json"
-MIN_BASELINE_SAMPLES = int(os.getenv("GARMIN_MIN_BASELINE_SAMPLES", "7"))
-MIN_RATIO_HISTORY_DAYS = int(os.getenv("GARMIN_MIN_RATIO_HISTORY_DAYS", "7"))
+LOGGER = get_logger(__name__)
 
 
 @dataclass
@@ -79,10 +79,10 @@ class MorningMetrics:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Garmin hybrid daily report v6.1 full")
     parser.add_argument("--days", type=int, default=1, help="Anzahl Kalendertage für Report-Ausgabe")
-    parser.add_argument("--limit", type=int, default=400, help="Anzahl letzter Aktivitäten, die abgefragt werden")
+    parser.add_argument("--limit", type=int, default=TRAINING_CONFIG.windows.default_activity_limit, help="Anzahl letzter Aktivitäten, die abgefragt werden")
     parser.add_argument("--json", type=str, default="", help="Optionaler JSON-Exportpfad")
     parser.add_argument("--history", type=str, default=DEFAULT_HISTORY_PATH, help="Pfad zur History-Datei")
-    parser.add_argument("--baseline-days", type=int, default=21, help="Tage für Rolling-Baseline")
+    parser.add_argument("--baseline-days", type=int, default=TRAINING_CONFIG.windows.baseline_days, help="Tage für Rolling-Baseline")
     parser.add_argument("--days-backfill", type=int, default=0, help="Initiale History für die letzten N Tage aufbauen")
     parser.add_argument("--mode", type=str, default="hybrid", choices=["run", "bike", "strength", "hybrid"], help="Empfehlungsmodus")
     parser.add_argument("--no-morning", action="store_true", help="Morgenwerte nicht abfragen")
@@ -90,52 +90,62 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def get_tokens_path(user_id: str) -> Path:
-    base_dir = Path(os.getenv("GARMIN_TOKENS_DIR", "/tmp/garmin_tokens"))
-    safe_user = hashlib.sha256(user_id.encode()).hexdigest()[:24]
-    return base_dir / safe_user / "garmin_tokens"
+def load_client(
+    email: Optional[str] = None,
+    password: Optional[str] = None,
+    *,
+    session_data: Optional[str] = None,
+) -> Garmin:
+    email = email or os.getenv("GARMIN_EMAIL")
+    password = password or os.getenv("GARMIN_PASSWORD")
 
-
-def _harden_tokens_path(tokens_path: Path) -> None:
-    try:
-        tokens_path.parent.mkdir(parents=True, exist_ok=True)
-        os.chmod(tokens_path.parent, 0o700)
-    except Exception:
-        pass
-
-    if tokens_path.exists():
-        try:
-            os.chmod(tokens_path, 0o600)
-        except Exception:
-            pass
-
-
-def load_client(email: str, password: str, user_id: str) -> Garmin:
-    tokens_path = get_tokens_path(user_id)
-
-    _harden_tokens_path(tokens_path)
-
-    if tokens_path.exists():
+    if session_data:
         try:
             client = Garmin()
-            client.login(str(tokens_path))
+            client.login(session_data)
             return client
-        except Exception:
-            pass
+        except Exception as exc:
+            log_exception(
+                LOGGER,
+                category=ErrorCategory.AUTH,
+                event="garmin.session_login_failed",
+                message="Stored Garmin session rejected, falling back to credentials.",
+                exc=exc,
+                level=logging.WARNING,
+            )
 
     if not email or not password:
-        raise RuntimeError("No valid Garmin tokens found and Garmin credentials are missing.")
+        raise RuntimeError("No valid Garmin session found and Garmin credentials are missing.")
 
     client = Garmin(email=email, password=password)
     client.login()
+    return client
+
+
+def export_client_session(client: Garmin) -> Optional[str]:
+    garth_client = getattr(client, "garth", None)
+    if garth_client is None or not hasattr(garth_client, "dumps"):
+        log_event(
+            LOGGER,
+            logging.WARNING,
+            category=ErrorCategory.API,
+            event="garmin.session_export_missing",
+            message="Garmin client does not expose a serializable session.",
+        )
+        return None
 
     try:
-        garth.dump(str(tokens_path))
-        _harden_tokens_path(tokens_path)
-    except Exception:
-        pass
-
-    return client
+        return garth_client.dumps()
+    except Exception as exc:
+        log_exception(
+            LOGGER,
+            category=ErrorCategory.API,
+            event="garmin.session_export_failed",
+            message="Failed to serialize Garmin session.",
+            exc=exc,
+            level=logging.WARNING,
+        )
+        return None
 
 
 def safe_get(d: Any, *keys: str) -> Any:
@@ -161,10 +171,10 @@ def to_datetime_local(start_local: Optional[str]) -> Optional[datetime]:
         try:
             return datetime.strptime(start_local, fmt)
         except ValueError:
-            pass
+            continue
     try:
         return datetime.fromisoformat(start_local)
-    except Exception:
+    except ValueError:
         return None
 
 
@@ -253,13 +263,26 @@ def filter_days(activities: List[ActivitySummary], days: int) -> List[ActivitySu
 
 
 def try_call(client: Garmin, method_names: List[str], *args: Any, **kwargs: Any) -> Any:
+    failures: List[Tuple[str, str]] = []
     for name in method_names:
         fn = getattr(client, name, None)
         if callable(fn):
             try:
                 return fn(*args, **kwargs)
-            except Exception:
+            except Exception as exc:
+                failures.append((name, str(exc)))
                 continue
+
+    if failures:
+        log_event(
+            LOGGER,
+            logging.WARNING,
+            category=ErrorCategory.API,
+            event="garmin.method_fallback_exhausted",
+            message="All Garmin method fallbacks failed.",
+            methods=[name for name, _error in failures],
+            errors=[error for _name, error in failures],
+        )
     return None
 
 
@@ -348,9 +371,10 @@ def stress_label(day: Dict[str, Optional[float]]) -> str:
     aero = day.get("aero_te_sum") or 0
     anaer = day.get("anaer_te_sum") or 0
     load = day.get("training_load_sum") or 0
-    if aero >= 4 or anaer >= 2 or load >= 120:
+    cfg = TRAINING_CONFIG.stress
+    if aero >= cfg.high_aero_te or anaer >= cfg.high_anaerobic_te or load >= cfg.high_load:
         return "hoch"
-    if aero >= 2 or anaer >= 0.7 or load >= 60:
+    if aero >= cfg.moderate_aero_te or anaer >= cfg.moderate_anaerobic_te or load >= cfg.moderate_load:
         return "moderat"
     return "niedrig"
 
@@ -363,8 +387,16 @@ def load_history(path: str) -> Dict[str, Any]:
         data = json.loads(p.read_text(encoding="utf-8"))
         if isinstance(data, dict) and isinstance(data.get("days"), dict):
             return data
-    except Exception:
-        pass
+    except Exception as exc:
+        log_exception(
+            LOGGER,
+            category=ErrorCategory.DB,
+            event="history.load_failed",
+            message="Failed to load training history file.",
+            exc=exc,
+            level=logging.WARNING,
+            path=str(p),
+        )
     return {"days": {}}
 
 
@@ -393,7 +425,7 @@ def available_history_days(history: Dict[str, Any], current_day: str, window_day
     for d, payload in days.items():
         try:
             day_date = datetime.strptime(d, "%Y-%m-%d").date()
-        except Exception:
+        except ValueError:
             continue
         if day_date < earliest or day_date > current:
             continue
@@ -416,7 +448,7 @@ def history_window(history: Dict[str, Any], current_day: str, field: str, baseli
     for d, payload in days.items():
         try:
             day_date = datetime.strptime(d, "%Y-%m-%d").date()
-        except Exception:
+        except ValueError:
             continue
         if not (earliest <= day_date < current):
             continue
@@ -438,7 +470,7 @@ def median_std(values: List[float]) -> Tuple[Optional[float], Optional[float]]:
 def band_text(value: Optional[float], baseline: Optional[float], std: Optional[float], higher_is_better: bool) -> str:
     if value is None or baseline is None or std is None:
         return "-"
-    std = max(std, 0.5)
+    std = max(std, TRAINING_CONFIG.readiness.std_floor)
     diff = value - baseline
     if not higher_is_better:
         diff = -diff
@@ -454,17 +486,12 @@ def compute_readiness(
     history: Dict[str, Any],
     day_str: str,
     baseline_days: int,
-    min_samples: int = MIN_BASELINE_SAMPLES,
+    min_samples: int = TRAINING_CONFIG.windows.min_baseline_samples,
 ) -> Dict[str, Any]:
     if not morning:
         return {"score": None, "bands": {}, "baselines": {}, "reason": "no_morning_metrics"}
 
-    fields = {
-        "hrv": True,
-        "resting_hr": False,
-        "respiration": False,
-        "sleep_h": True,
-    }
+    fields = TRAINING_CONFIG.readiness.higher_is_better
 
     baselines: Dict[str, Any] = {}
     bands: Dict[str, str] = {}
@@ -483,19 +510,19 @@ def compute_readiness(
         bands[field] = band_text(current, baseline, std, higher_is_better)
 
         if current is not None and baseline is not None and std is not None:
-            std_eff = max(std, 0.5)
+            std_eff = max(std, TRAINING_CONFIG.readiness.std_floor)
             z = (current - baseline) / std_eff
             if not higher_is_better:
                 z = -z
-            z = max(-2.5, min(2.5, z))
+            z = max(-TRAINING_CONFIG.readiness.z_clip, min(TRAINING_CONFIG.readiness.z_clip, z))
             contributions.append(z)
 
     if not contributions:
         return {"score": None, "bands": bands, "baselines": baselines, "reason": "insufficient_baseline_history"}
 
     avg_z = sum(contributions) / len(contributions)
-    score = round(50 + avg_z * 15)
-    score = max(1, min(99, score))
+    score = round(TRAINING_CONFIG.readiness.score_center + avg_z * TRAINING_CONFIG.readiness.score_scale)
+    score = max(TRAINING_CONFIG.readiness.min_score, min(TRAINING_CONFIG.readiness.max_score, score))
     return {"score": score, "bands": bands, "baselines": baselines, "reason": None}
 
 
@@ -518,14 +545,16 @@ def rolling_load(history: Dict[str, Any], end_day_str: str, window_days: int) ->
 def compute_load_metrics(
     history: Dict[str, Any],
     day_str: str,
-    min_history_days: int = MIN_RATIO_HISTORY_DAYS,
+    min_history_days: int = TRAINING_CONFIG.windows.min_ratio_history_days,
 ) -> Dict[str, Optional[float]]:
-    acute_7d = rolling_load(history, day_str, 7)
-    chronic_28d = rolling_load(history, day_str, 28)
+    acute_days = TRAINING_CONFIG.windows.acute_load_days
+    chronic_days = TRAINING_CONFIG.windows.chronic_load_days
+    acute_7d = rolling_load(history, day_str, acute_days)
+    chronic_28d = rolling_load(history, day_str, chronic_days)
 
-    acute_daily_avg = acute_7d / 7.0 if acute_7d > 0 else 0.0
-    chronic_daily_avg = chronic_28d / 28.0 if chronic_28d > 0 else 0.0
-    history_days = available_history_days(history, day_str, 28, include_current=True)
+    acute_daily_avg = acute_7d / float(acute_days) if acute_7d > 0 else 0.0
+    chronic_daily_avg = chronic_28d / float(chronic_days) if chronic_28d > 0 else 0.0
+    history_days = available_history_days(history, day_str, chronic_days, include_current=True)
 
     ratio = None
     reason = None
@@ -550,11 +579,12 @@ def load_ratio_label(ratio: Optional[float], reason: Optional[str] = None) -> st
         if reason == "insufficient_load_history":
             return "zu wenig Historie"
         return "-"
-    if ratio < 0.8:
+    cfg = TRAINING_CONFIG.ratio
+    if ratio < cfg.under_target_max:
         return "unter Soll"
-    if ratio <= 1.3:
+    if ratio <= cfg.target_max:
         return "im Zielbereich"
-    if ratio <= 1.5:
+    if ratio <= cfg.elevated_max:
         return "erhöht"
     return "kritisch hoch"
 
@@ -568,61 +598,65 @@ def recommendation(
 ) -> str:
     ratio = load_metrics.get("load_ratio")
     score = readiness.get("score")
+    alerts = TRAINING_CONFIG.alerts
+    ratio_cfg = TRAINING_CONFIG.ratio
 
     if morning:
         if (
-            (morning.respiration is not None and morning.respiration >= 15.5)
-            or (morning.hrv is not None and morning.hrv <= 33)
-            or (morning.resting_hr is not None and morning.resting_hr >= 58)
+            (morning.respiration is not None and morning.respiration >= alerts.respiration_high)
+            or (morning.hrv is not None and morning.hrv <= alerts.hrv_low)
+            or (morning.resting_hr is not None and morning.resting_hr >= alerts.resting_hr_high)
         ):
             return "Nur aktive Erholung / Z1-Z2 locker / Mobility"
 
-    if ratio is not None and ratio > 1.5:
+    if ratio is not None and ratio > ratio_cfg.elevated_max:
         return "Belastung aktuell zu hoch: nur locker / Erholung / Mobility"
 
     if not isinstance(score, int):
         return "Training nach Gefühl, Datenlage noch zu dünn"
 
+    band = TRAINING_CONFIG.recommendation_band(mode)
+
     if mode == "run":
-        if score <= 35:
+        if score <= band.recovery_max:
             return "Nur locker laufen / Mobility"
-        if score <= 50:
+        if score <= band.moderate_max:
             return "Lockerer bis aerober Dauerlauf"
-        if score <= 65:
+        if score <= band.solid_max:
             return "Moderater Lauf, keine harten Intervalle"
-        if score <= 80:
+        if score <= band.quality_max:
             return "Qualitätstag Run möglich"
         return "Harter Lauf-Qualitätstag gut vertretbar"
 
     if mode == "bike":
-        if score <= 35:
+        if score <= band.recovery_max:
             return "Nur locker rollen / Mobility"
-        if score <= 50:
+        if score <= band.moderate_max:
             return "Lockere bis moderate Radeinheit"
-        if score <= 65:
+        if score <= band.solid_max:
             return "Moderater Bike-Tag, keine maximalen Intervalle"
-        if score <= 80:
+        if score <= band.quality_max:
             return "Qualitätstag Bike möglich"
         return "Harter Bike-Intervalltag gut vertretbar"
 
     if mode == "strength":
-        if score <= 35:
+        if score <= band.recovery_max:
             return "Nur Mobility oder sehr leichtes Krafttraining"
-        if score <= 50:
+        if score <= band.moderate_max:
             return "Moderates Krafttraining"
-        if score <= 65:
+        if score <= band.solid_max:
             return "Normales Krafttraining möglich"
-        if score <= 80:
+        if score <= band.quality_max:
             return "Schweres Krafttraining möglich"
         return "Schweres Krafttraining sehr gut vertretbar"
 
-    if score <= 35:
+    if score <= band.recovery_max:
         return "Nur locker / Erholung / Mobility"
-    if score <= 50:
+    if score <= band.moderate_max:
         return "Aerober Basistag oder moderates Krafttraining"
-    if score <= 65:
+    if score <= band.solid_max:
         return "Solider Trainingstag: moderat bis zügig, aber nicht maximal"
-    if score <= 80:
+    if score <= band.quality_max:
         return "Qualitätstag möglich"
     return "Harter Qualitätstag gut vertretbar"
 
@@ -634,25 +668,27 @@ def suggested_units(score: Optional[int], ratio: Optional[float], mode: str) -> 
             "Optional 10-15 min Mobility",
         ]
 
-    if ratio is not None and ratio > 1.5:
+    if ratio is not None and ratio > TRAINING_CONFIG.ratio.elevated_max:
         return [
             "30-45 min sehr locker in Z1",
             "oder 20-30 min Mobility / Spazieren",
             "keine harte Qualität, kein schweres Krafttraining",
         ]
 
+    low_band, mid_band, high_band = TRAINING_CONFIG.unit_band(mode)
+
     if mode == "run":
-        if score < 40:
+        if score < low_band:
             return [
                 "30-40 min locker laufen oder gehen",
                 "optional 6 x 20 s lockere Steigerungen nur wenn Beine gut",
             ]
-        if score < 65:
+        if score < mid_band:
             return [
                 "45-60 min lockerer bis moderater Dauerlauf",
                 "alternativ 30-45 min locker + 6 x 20 s Steigerungen",
             ]
-        if score < 80:
+        if score < high_band:
             return [
                 "6 x 3 min zügig mit 2 min locker",
                 "alternativ 4 x 5 min an Schwelle mit 2-3 min locker",
@@ -663,17 +699,17 @@ def suggested_units(score: Optional[int], ratio: Optional[float], mode: str) -> 
         ]
 
     if mode == "bike":
-        if score < 40:
+        if score < low_band:
             return [
                 "45-60 min sehr locker rollen in Z1/Z2",
                 "hohe Kadenz, keine Intervalle",
             ]
-        if score < 65:
+        if score < mid_band:
             return [
                 "60-90 min locker bis moderat in Z2",
                 "alternativ 3 x 8 min Sweet Spot kontrolliert",
             ]
-        if score < 80:
+        if score < high_band:
             return [
                 "4 x 8 min zügig mit 4 min locker",
                 "alternativ 5 x 5 min hart mit 3 min locker",
@@ -684,17 +720,17 @@ def suggested_units(score: Optional[int], ratio: Optional[float], mode: str) -> 
         ]
 
     if mode == "strength":
-        if score < 40:
+        if score < low_band:
             return [
                 "Nur Mobility, Technik oder sehr leichte Maschinenrunde",
                 "kein schweres Beintraining",
             ]
-        if score < 60:
+        if score < mid_band:
             return [
                 "Moderates Krafttraining Ganzkörper, 2-3 Sätze",
                 "1-3 Wiederholungen im Tank lassen",
             ]
-        if score < 80:
+        if score < high_band:
             return [
                 "Schweres Krafttraining möglich, Hauptlifts fokussieren",
                 "z. B. 3-5 Sätze Grundübungen, moderates Volumen",
@@ -705,19 +741,19 @@ def suggested_units(score: Optional[int], ratio: Optional[float], mode: str) -> 
         ]
 
     # hybrid = run + bike + strength
-    if score < 40:
+    if score < low_band:
         return [
             "Run/Bike: 30-40 min locker",
             "Mobility: 20-30 min",
             "Strength: nur leichtes Krafttraining ohne schwere Sätze",
         ]
-    if score < 60:
+    if score < mid_band:
         return [
             "Run: 45-60 min locker bis moderat",
             "Bike: 60-90 min locker Z2",
             "Strength: normale eGym-Runde / moderates Ganzkörpertraining",
         ]
-    if score < 80:
+    if score < high_band:
         return [
             "Run: 6 x 3 min zügig oder 4 x 5 min Schwelle",
             "Bike: 4 x 8 min zügig oder 5 x 5 min hart",
@@ -740,41 +776,15 @@ def build_training_flags(mode: str, score: Optional[int], ratio: Optional[float]
 
     if score is None:
         return flags
-    if ratio is not None and ratio > 1.5:
+    if ratio is not None and ratio > TRAINING_CONFIG.ratio.elevated_max:
         return flags
 
-    if mode == "run":
-        if score >= 65:
-            flags["quality"] = "JA"
-        if score >= 80:
-            flags["max_test"] = "JA"
-        if score >= 55:
-            flags["strength_heavy"] = "JA"
-        return flags
-
-    if mode == "bike":
-        if score >= 65:
-            flags["quality"] = "JA"
-        if score >= 82:
-            flags["max_test"] = "JA"
-        if score >= 55:
-            flags["strength_heavy"] = "JA"
-        return flags
-
-    if mode == "strength":
-        if score >= 55:
-            flags["strength_heavy"] = "JA"
-        if score >= 70:
-            flags["quality"] = "JA"
-        if score >= 85:
-            flags["max_test"] = "JA"
-        return flags
-
-    if score >= 60:
+    thresholds = TRAINING_CONFIG.flags_for_mode(mode)
+    if score >= thresholds.quality_min:
         flags["quality"] = "JA"
-    if score >= 60:
+    if score >= thresholds.strength_heavy_min:
         flags["strength_heavy"] = "JA"
-    if score >= 82:
+    if score >= thresholds.max_test_min:
         flags["max_test"] = "JA"
     return flags
 
@@ -993,7 +1003,16 @@ def backfill_history(
         if not no_morning:
             try:
                 morning, bundle = fetch_morning_metrics(client, day_str)
-            except Exception:
+            except Exception as exc:
+                log_exception(
+                    LOGGER,
+                    category=ErrorCategory.API,
+                    event="garmin.backfill_morning_failed",
+                    message="Morning metric fetch failed during backfill.",
+                    exc=exc,
+                    level=logging.WARNING,
+                    day=day_str,
+                )
                 morning = None
                 bundle = None
 
@@ -1130,21 +1149,30 @@ def main_logic_for_day(
     history: Optional[Dict[str, Any]] = None,
     client: Optional[Garmin] = None,
     recent_activities: Optional[List[ActivitySummary]] = None,
-    baseline_days: int = 21,
+    baseline_days: int = TRAINING_CONFIG.windows.baseline_days,
     persist_history: bool = False,
 ) -> dict:
     client = client or load_client()
     history = history if history is not None else load_history(DEFAULT_HISTORY_PATH)
 
     if recent_activities is None:
-        recent_activities = get_recent_activities(client, 400)
+        recent_activities = get_recent_activities(client, TRAINING_CONFIG.windows.default_activity_limit)
 
     activities_for_day = [a for a in recent_activities if a.date_local == day]
 
     morning = None
     try:
         morning, _bundle = fetch_morning_metrics(client, day)
-    except Exception:
+    except Exception as exc:
+        log_exception(
+            LOGGER,
+            category=ErrorCategory.API,
+            event="garmin.morning_metrics_failed",
+            message="Morning metric fetch failed for requested day.",
+            exc=exc,
+            level=logging.WARNING,
+            day=day,
+        )
         morning = None
 
     summary = aggregate_day(activities_for_day)
