@@ -57,6 +57,20 @@ HTML = """
     .wrap { max-width: 1600px; margin: 0 auto; padding: 24px; }
     h1 { margin: 0 0 8px 0; font-size: 32px; }
     .sub { color: var(--muted); margin-bottom: 24px; }
+    .auth-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 24px; }
+    .auth-panel { min-height: 100%; }
+    .field { margin-bottom: 12px; }
+    .field label { display: block; color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+    .field input {
+      width: 100%;
+      padding: 10px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #0d1326;
+      color: var(--text);
+      font: inherit;
+    }
+    .field-help { color: var(--muted); font-size: 12px; margin-top: 4px; }
     .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 16px; }
     .card {
       background: rgba(21,27,47,0.9);
@@ -98,6 +112,11 @@ HTML = """
     table { width: 100%; border-collapse: collapse; font-size: 14px; }
     th, td { padding: 10px 8px; border-bottom: 1px solid var(--border); text-align: left; }
     th { color: var(--muted); font-weight: 600; }
+    .chart-meta { display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-bottom: 10px; }
+    .chart-caption { color: var(--muted); font-size: 12px; }
+    .chart-legend { display:flex; gap:12px; align-items:center; flex-wrap:wrap; color: var(--muted); font-size: 12px; }
+    .chart-legend span { display:inline-flex; gap:6px; align-items:center; }
+    .chart-legend i { width:18px; height:3px; border-radius:999px; display:inline-block; }
     .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
     select, button {
       background: var(--panel-2);
@@ -109,6 +128,7 @@ HTML = """
     }
     button { cursor: pointer; }
     button:hover { border-color: var(--accent); }
+    button:disabled, input:disabled { opacity: 0.55; cursor: not-allowed; }
     textarea {
       width: 100%;
       min-height: 280px;
@@ -121,7 +141,12 @@ HTML = """
       resize: vertical;
     }
     .hint { color: var(--muted); font-size: 13px; margin-top: 8px; }
+    .history-hint { color: var(--muted); font-size: 12px; margin-bottom: 10px; }
+    .history-row { cursor: pointer; transition: background 120ms ease, transform 120ms ease; }
+    .history-row:hover { background: rgba(122,162,255,0.08); }
+    .history-row.is-active { background: rgba(122,162,255,0.16); box-shadow: inset 3px 0 0 var(--accent); }
     @media (max-width: 900px) {
+      .auth-grid { grid-template-columns: 1fr; }
       .span-3, .span-4, .span-6, .span-8, .span-12 { grid-column: span 12; }
       .metrics, .flags { grid-template-columns: repeat(2, 1fr); }
       #unitsList { grid-template-columns: 1fr !important; }
@@ -130,27 +155,46 @@ HTML = """
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
-<div id="authBox" style="max-width:420px;margin:24px auto;padding:20px;background:#151b2f;border:1px solid #2b3459;border-radius:16px;">
-  <h2 style="margin-top:0;">Login</h2>
-  <input id="loginEmail" type="email" placeholder="E-Mail" style="width:100%;margin-bottom:10px;padding:10px;border-radius:10px;border:1px solid #2b3459;background:#0d1326;color:#ecf1ff;">
-  <input id="loginPassword" type="password" placeholder="Passwort" style="width:100%;margin-bottom:10px;padding:10px;border-radius:10px;border:1px solid #2b3459;background:#0d1326;color:#ecf1ff;">
-  <div style="display:flex;gap:10px;">
-    <button id="loginBtn" onclick="login()">Login</button>
-    <button id="signupBtn" onclick="signup()">Registrieren</button>
-    <button id="logoutBtn" onclick="logout()" style="display:none;">Logout</button>
+<div class="wrap">
+<h1>Garmin Training Dashboard</h1>
+<div class="sub">Readiness, 7d/28d Load, konkrete Einheiten und KI-Prompt aus Supabase</div>
+<div class="auth-grid">
+  <div id="authBox" class="card auth-panel">
+    <h2 style="margin-top:0;">App-Konto</h2>
+    <div class="field">
+      <label for="loginEmail">E-Mail fuer dein Dashboard-Konto</label>
+      <input id="loginEmail" type="email" placeholder="name@example.com">
+    </div>
+    <div class="field">
+      <label for="loginPassword">Passwort fuer dein Dashboard-Konto</label>
+      <input id="loginPassword" type="password" placeholder="Dein Supabase-Passwort">
+      <div class="field-help">Mit diesen Daten meldest du dich an der App an, nicht bei Garmin.</div>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <button id="loginBtn" onclick="login()">Login</button>
+      <button id="signupBtn" onclick="signup()">Registrieren</button>
+      <button id="logoutBtn" onclick="logout()" style="display:none;">Logout</button>
+    </div>
+    <div id="authStatus" style="margin-top:10px;color:#a8b3d1;">Nicht eingeloggt</div>
   </div>
-  <div id="authStatus" style="margin-top:10px;color:#a8b3d1;">Nicht eingeloggt</div>
-</div>
-<div id="garminBox" style="max-width:420px;margin:0 auto 24px auto;padding:20px;background:#151b2f;border:1px solid #2b3459;border-radius:16px;">
-  <h2 style="margin-top:0;">Garmin verbinden</h2>
-  <input id="garminEmail" type="email" placeholder="Garmin E-Mail" disabled style="width:100%;margin-bottom:10px;padding:10px;border-radius:10px;border:1px solid #2b3459;background:#0d1326;color:#ecf1ff;">
-  <input id="garminPassword" type="password" placeholder="Garmin Passwort" disabled style="width:100%;margin-bottom:10px;padding:10px;border-radius:10px;border:1px solid #2b3459;background:#0d1326;color:#ecf1ff;">
-  <div style="display:flex;gap:10px;">
-    <button id="connectGarminBtn" onclick="connectGarmin()" disabled>Garmin speichern</button>
-    <button id="updateBtn" onclick="updateData()" disabled>Daten aktualisieren</button>
-    <button id="backfillBtn" onclick="backfillData()" disabled>Backfill 28 Tage</button>
+  <div id="garminBox" class="card auth-panel">
+    <h2 style="margin-top:0;">Garmin Connect</h2>
+    <div class="field">
+      <label for="garminEmail">Garmin Connect E-Mail</label>
+      <input id="garminEmail" type="email" placeholder="dein-garmin-login@example.com" disabled>
+    </div>
+    <div class="field">
+      <label for="garminPassword">Garmin Connect Passwort</label>
+      <input id="garminPassword" type="password" placeholder="Dein Garmin-Passwort" disabled>
+      <div class="field-help">Diese Daten werden verschluesselt pro Benutzer gespeichert und nur fuer Garmin-Syncs verwendet.</div>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <button id="connectGarminBtn" onclick="connectGarmin()" disabled>Garmin speichern</button>
+      <button id="updateBtn" onclick="updateData()" disabled>Daten aktualisieren</button>
+      <button id="backfillBtn" onclick="backfillData()" disabled>Backfill 28 Tage</button>
+    </div>
+    <div id="garminStatus" style="margin-top:10px;color:#a8b3d1;">Bitte zuerst einloggen, um Garmin zu verbinden.</div>
   </div>
-  <div id="garminStatus" style="margin-top:10px;color:#a8b3d1;">Bitte zuerst einloggen, um Garmin zu verbinden.</div>
 </div>
 <script>
 const SUPABASE_URL = "{{ supabase_url }}";
@@ -270,7 +314,10 @@ async function refreshAuthStatus() {
 
 function clearDashboard() {
   dashboardData = null;
+  selectedDate = null;
+  el("currentDayLabel").textContent = "Ausgewaehlter Tag";
   el("todayDate").textContent = "-";
+  el("currentDayHint").textContent = "noch kein Tag ausgewaehlt";
   el("todayReadiness").textContent = "-";
   el("todayReadiness").style.color = "#a8b3d1";
   el("todayRatio").textContent = "-";
@@ -285,6 +332,7 @@ function clearDashboard() {
   el("flagQuality").textContent = "-";
   el("flagStrength").textContent = "-";
   el("flagMax").textContent = "-";
+  el("activitiesTitle").textContent = "Einheiten des ausgewaehlten Tages";
   el("todayActivitiesTable").innerHTML = `<tr><td colspan="9">Bitte einloggen, um Trainingsdaten zu sehen.</td></tr>`;
   el("unitsIntro").textContent = "Bitte einloggen, um Empfehlungen zu sehen.";
   el("unitsList").innerHTML = "";
@@ -314,6 +362,11 @@ function isAuthError(message) {
     message.includes("missing token") ||
     message.includes("invalid token")
   );
+}
+
+function chartPointY(value, minY, maxY, top, plotHeight) {
+  const range = Math.max(1, maxY - minY);
+  return top + ((maxY - value) / range) * plotHeight;
 }
 
 async function login() {
@@ -399,6 +452,7 @@ async function connectGarmin() {
       return;
     }
 
+    document.getElementById("garminStatus").textContent = "Pruefe Garmin Zugangsdaten...";
     await apiPost("/api/garmin/connect", { email, password });
     document.getElementById("garminStatus").textContent = "Garmin Zugangsdaten gespeichert.";
   } catch (e) {
@@ -417,15 +471,11 @@ async function backfillData() {
 }
 
 </script>
-  <div class="wrap">
-    <h1>Garmin Training Dashboard</h1>
-<div class="sub">Readiness, 7d/28d Load, konkrete Einheiten und KI-Prompt aus Supabase</div>
-
     <div class="grid">
       <div class="card span-3">
-        <div class="kpi-label">Heute</div>
+        <div class="kpi-label" id="currentDayLabel">Ausgewaehlter Tag</div>
         <div class="kpi-value" id="todayDate">-</div>
-        <div class="kpi-small">letzter verfügbarer Tag</div>
+        <div class="kpi-small" id="currentDayHint">letzter verfügbarer Tag</div>
       </div>
 
       <div class="card span-3">
@@ -448,6 +498,13 @@ async function backfillData() {
 
       <div class="card span-8">
         <div class="section-title">Readiness Verlauf</div>
+        <div class="chart-meta">
+          <div class="chart-caption">Y-Achse: Readiness-Score, X-Achse: Datum der letzten 21 Tage</div>
+          <div class="chart-legend">
+            <span><i style="background:#35c759;"></i>Readiness</span>
+            <span><i style="background:rgba(122,162,255,0.6);"></i>Ausgewaehlter Tag</span>
+          </div>
+        </div>
         <svg id="readinessChart" class="chart" viewBox="0 0 800 280" preserveAspectRatio="none"></svg>
       </div>
 
@@ -475,6 +532,14 @@ async function backfillData() {
 
       <div class="card span-8">
         <div class="section-title">Load Verlauf</div>
+        <div class="chart-meta">
+          <div class="chart-caption">Y-Achse: Trainingslast, X-Achse: Datum der letzten 21 Tage</div>
+          <div class="chart-legend">
+            <span><i style="background:#7aa2ff;"></i>Tages-Load</span>
+            <span><i style="background:#ffcc00;"></i>7d Load</span>
+            <span><i style="background:rgba(122,162,255,0.6);"></i>Ausgewaehlter Tag</span>
+          </div>
+        </div>
         <svg id="loadChart" class="chart" viewBox="0 0 800 280" preserveAspectRatio="none"></svg>
       </div>
 
@@ -500,7 +565,7 @@ async function backfillData() {
         </div>
       </div>
 <div class="card span-12">
-  <div class="section-title">Heutige Einheiten</div>
+  <div class="section-title" id="activitiesTitle">Einheiten des ausgewaehlten Tages</div>
   <table>
     <thead>
       <tr>
@@ -542,6 +607,7 @@ async function backfillData() {
 
       <div class="card span-12">
         <div class="section-title">Letzte Tage</div>
+        <div class="history-hint">Klick auf eine Zeile, um diesen Tag oben im Dashboard anzuzeigen.</div>
         <table>
           <thead>
             <tr>
@@ -564,6 +630,33 @@ async function backfillData() {
 function el(id) { return document.getElementById(id); }
 
 let dashboardData = null;
+let selectedDate = null;
+
+function getSelectedSeriesItem(data = dashboardData) {
+  if (!data || !Array.isArray(data.series) || !data.series.length) {
+    return null;
+  }
+
+  const fallback = data.latest || data.series[data.series.length - 1];
+  if (!selectedDate) {
+    selectedDate = fallback?.date || null;
+  }
+
+  const selectedItem = data.series.find((item) => item.date === selectedDate);
+  if (selectedItem) {
+    return selectedItem;
+  }
+
+  selectedDate = fallback?.date || null;
+  return fallback || null;
+}
+
+function selectDay(day) {
+  selectedDate = day;
+  if (dashboardData) {
+    render(dashboardData);
+  }
+}
 
 function scoreColor(v) {
   if (v == null) return "#a8b3d1";
@@ -591,22 +684,30 @@ function buildFlags(item) {
   return flags;
 }
 
-function polylinePath(data, valueKey, minY, maxY, width, height, padding) {
+function polylinePath(data, valueKey, minY, maxY, left, top, plotWidth, plotHeight) {
   const valid = data.filter(d => d[valueKey] != null);
   if (!valid.length) return "";
-  const xStep = data.length > 1 ? (width - padding * 2) / (data.length - 1) : 0;
+  const xStep = data.length > 1 ? plotWidth / (data.length - 1) : 0;
+  const range = Math.max(1, maxY - minY);
   return data.map((d, i) => {
     const v = d[valueKey];
     if (v == null) return null;
-    const x = padding + i * xStep;
-    const y = padding + (maxY - v) / (maxY - minY) * (height - padding * 2);
+    const x = left + i * xStep;
+    const y = top + ((maxY - v) / range) * plotHeight;
     return `${x},${y}`;
   }).filter(Boolean).join(" ");
 }
 
-function drawChart(svgId, data, lines) {
+function drawChart(svgId, data, lines, options = {}) {
   const svg = el(svgId);
-  const width = 800, height = 280, padding = 24;
+  const width = 800;
+  const height = 280;
+  const left = 48;
+  const right = 18;
+  const top = 22;
+  const bottom = 30;
+  const plotWidth = width - left - right;
+  const plotHeight = height - top - bottom;
 
   let values = [];
   lines.forEach(line => {
@@ -621,24 +722,47 @@ function drawChart(svgId, data, lines) {
     return;
   }
 
-  const minY = Math.min(...values) * 0.9;
-  const maxY = Math.max(...values) * 1.1;
+  const minValue = Math.min(...values);
+  const maxValue = Math.max(...values);
+  const paddingValue = Math.max(1, (maxValue - minValue) * 0.1);
+  const minY = minValue - paddingValue;
+  const maxY = maxValue + paddingValue;
+  const xStep = data.length > 1 ? plotWidth / (data.length - 1) : 0;
+  const selectedIndex = options.selectedDate ? data.findIndex(d => d.date === options.selectedDate) : -1;
 
   let html = "";
   for (let i = 0; i < 4; i++) {
-    const y = padding + ((height - padding * 2) / 3) * i;
-    html += `<line x1="${padding}" y1="${y}" x2="${width-padding}" y2="${y}" stroke="rgba(255,255,255,0.08)" stroke-width="1" />`;
+    const y = top + (plotHeight / 3) * i;
+    const value = maxY - ((maxY - minY) / 3) * i;
+    html += `<line x1="${left}" y1="${y}" x2="${width-right}" y2="${y}" stroke="rgba(255,255,255,0.08)" stroke-width="1" />`;
+    html += `<text x="${left-8}" y="${y+4}" font-size="10" text-anchor="end" fill="#a8b3d1">${Math.round(value)}</text>`;
+  }
+
+  if (selectedIndex >= 0) {
+    const selectedX = left + selectedIndex * xStep;
+    html += `<line x1="${selectedX}" y1="${top}" x2="${selectedX}" y2="${height-bottom}" stroke="rgba(122,162,255,0.55)" stroke-width="2" stroke-dasharray="4 4" />`;
   }
 
   lines.forEach(line => {
-    const pts = polylinePath(data, line.key, minY, maxY, width, height, padding);
-    if (pts) html += `<polyline fill="none" stroke="${line.color}" stroke-width="3" points="${pts}" />`;
+    const pts = polylinePath(data, line.key, minY, maxY, left, top, plotWidth, plotHeight);
+    if (pts) {
+      html += `<polyline fill="none" stroke="${line.color}" stroke-width="3" points="${pts}" />`;
+    }
+
+    if (selectedIndex >= 0) {
+      const selectedValue = data[selectedIndex]?.[line.key];
+      if (selectedValue != null) {
+        const x = left + selectedIndex * xStep;
+        const y = chartPointY(selectedValue, minY, maxY, top, plotHeight);
+        html += `<circle cx="${x}" cy="${y}" r="4.5" fill="${line.color}" stroke="#0b1020" stroke-width="2" />`;
+      }
+    }
   });
 
   data.forEach((d, i) => {
-    const xStep = data.length > 1 ? (width - padding * 2) / (data.length - 1) : 0;
-    const x = padding + i * xStep;
-    html += `<text x="${x}" y="${height-8}" font-size="10" text-anchor="middle" fill="#a8b3d1">${d.date.slice(5)}</text>`;
+    const x = left + i * xStep;
+    const fill = d.date === options.selectedDate ? "#ecf1ff" : "#a8b3d1";
+    html += `<text x="${x}" y="${height-8}" font-size="10" text-anchor="middle" fill="${fill}">${d.date.slice(5)}</text>`;
   });
 
   svg.innerHTML = html;
@@ -659,13 +783,14 @@ function modeUnits(item, mode) {
 }
 
 async function updatePrompt() {
-  if (!dashboardData || !dashboardData.latest) return;
+  const selectedItem = getSelectedSeriesItem();
+  if (!dashboardData || !selectedItem) return;
   const mode = el("modeSelect").value;
 
   try {
-    const data = await apiGet(`/api/ai-prompt?mode=${encodeURIComponent(mode)}`);
+    const data = await apiGet(`/api/ai-prompt?mode=${encodeURIComponent(mode)}&date=${encodeURIComponent(selectedItem.date)}`);
     el("aiPrompt").value = data.prompt || "";
-    el("todayRec").textContent = modeRecommendation(dashboardData.latest, mode) || "-";
+    el("todayRec").textContent = modeRecommendation(selectedItem, mode) || "-";
   } catch (e) {
     el("aiPrompt").value = `Fehler: ${e.message}`;
   }
@@ -673,29 +798,34 @@ async function updatePrompt() {
 
 function render(data) {
   dashboardData = data;
-  const latest = data.latest;
-  if (!latest) return;
+  const active = getSelectedSeriesItem(data);
+  const latest = data.latest || active;
+  if (!active || !latest) return;
 
-  el("todayDate").textContent = latest.date;
-  el("todayReadiness").textContent = latest.readiness ?? "-";
-  el("todayReadiness").style.color = scoreColor(latest.readiness);
+  const activeIsLatest = active.date === latest.date;
+  el("currentDayLabel").textContent = activeIsLatest ? "Aktiver Tag" : "Ausgewaehlter Tag";
+  el("currentDayHint").textContent = activeIsLatest ? "letzter verfuegbarer Tag" : "aus Tabelle ausgewaehlt";
+  el("todayDate").textContent = active.date;
+  el("todayReadiness").textContent = active.readiness ?? "-";
+  el("todayReadiness").style.color = scoreColor(active.readiness);
 
-  el("todayRatio").textContent = latest.ratio ?? "-";
-  el("todayRatio").style.color = ratioColor(latest.ratio);
-  el("todayRatioLabel").textContent = latest.ratio_label ?? "-";
+  el("todayRatio").textContent = active.ratio ?? "-";
+  el("todayRatio").style.color = ratioColor(active.ratio);
+  el("todayRatioLabel").textContent = active.ratio_label ?? "-";
 
-  el("mRestingHr").textContent = latest.resting_hr ?? "-";
-  el("mHrv").textContent = latest.hrv ?? "-";
-  el("mResp").textContent = latest.respiration ?? "-";
-  el("mSleep").textContent = latest.sleep_h ?? "-";
+  el("mRestingHr").textContent = active.resting_hr ?? "-";
+  el("mHrv").textContent = active.hrv ?? "-";
+  el("mResp").textContent = active.respiration ?? "-";
+  el("mSleep").textContent = active.sleep_h ?? "-";
 
-  const flags = buildFlags(latest);
+  const flags = buildFlags(active);
   el("flagEasy").textContent = flags.easy;
   el("flagQuality").textContent = flags.quality;
   el("flagStrength").textContent = flags.strength;
   el("flagMax").textContent = flags.max;
 
-const acts = latest.activities || [];
+  el("activitiesTitle").textContent = `Einheiten am ${active.date}`;
+const acts = active.activities || [];
 
 el("todayActivitiesTable").innerHTML = acts.length
   ? acts.map(a => `
@@ -715,17 +845,17 @@ el("todayActivitiesTable").innerHTML = acts.length
   
   drawChart("readinessChart", data.series.slice(-21), [
     { key: "readiness", color: "#35c759" }
-  ]);
+  ], { selectedDate: active.date });
 
   drawChart("loadChart", data.series.slice(-21), [
     { key: "load_day", color: "#7aa2ff" },
     { key: "load_7d", color: "#ffcc00" }
-  ]);
+  ], { selectedDate: active.date });
 
   const mode = el("modeSelect").value;
-  el("todayRec").textContent = modeRecommendation(latest, mode) || "-";
+  el("todayRec").textContent = modeRecommendation(active, mode) || "-";
 
-  const units = modeUnits(latest, mode);
+  const units = modeUnits(active, mode);
   const modeLabel = mode === "hybrid" ? "hybrid = run + bike + strength" : mode;
   el("unitsIntro").textContent = `Konkrete Optionen passend zum gewählten Modus (${modeLabel}).`;
   el("unitsList").innerHTML = units.map((u, idx) => `
@@ -736,7 +866,7 @@ el("todayActivitiesTable").innerHTML = acts.length
   `).join("");
 
   const rows = data.series.slice().reverse().slice(0, 14).map(d => `
-    <tr>
+    <tr class="history-row${d.date === active.date ? " is-active" : ""}" onclick="selectDay('${d.date}')">
       <td>${d.date}</td>
       <td style="color:${scoreColor(d.readiness)};font-weight:700">${d.readiness ?? "-"}</td>
       <td>${d.load_day}</td>
@@ -906,6 +1036,16 @@ def _build_prompt_from_payload(payload: Optional[Dict[str, Any]], mode: str) -> 
     )
 
 
+def _payload_for_date(rows: List[Dict[str, Any]], selected_date: Optional[str]) -> Optional[Dict[str, Any]]:
+    if selected_date:
+        for row in rows:
+            payload = row.get("data") or {}
+            row_date = payload.get("date") or row.get("date")
+            if row_date == selected_date:
+                return payload
+    return rows[-1].get("data") if rows else None
+
+
 def _upsert_payload(user_id: str, payload: Dict[str, Any]) -> None:
     (
         supabase.table("training_days")
@@ -956,6 +1096,18 @@ def _clear_garmin_tokens(user_id: str) -> None:
         pass
 
 
+def _garmin_error_message(exc: Exception) -> str:
+    message = str(exc).strip()
+    if "Authentication failed" in message or "401 Client Error" in message:
+        return "Garmin Anmeldung fehlgeschlagen. Bitte Garmin E-Mail und Passwort prüfen."
+    return message or "Garmin Fehler"
+
+
+def _is_garmin_auth_error(exc: Exception) -> bool:
+    message = str(exc)
+    return "Authentication failed" in message or "401 Client Error" in message
+
+
 def _parse_backfill_days(raw_value: str) -> int:
     try:
         days = int(raw_value)
@@ -998,9 +1150,11 @@ def dashboard():
 def api_ai_prompt():
     mode = _mode_or_default(request.args.get("mode", "hybrid"))
     rows = _fetch_rows(request.user_id, limit=365)
-    latest_payload = rows[-1].get("data") if rows else None
+    selected_date = request.args.get("date")
+    latest_payload = _payload_for_date(rows, selected_date)
     return jsonify({
         "mode": mode,
+        "date": selected_date or (latest_payload or {}).get("date"),
         "prompt": _build_prompt_from_payload(latest_payload, mode)
     })
 
@@ -1049,9 +1203,14 @@ def update():
         )
         return {"status": "ok", "date": payload["date"]}
     except RuntimeError as exc:
-        _set_garmin_sync_state(request.user_id, sync_status="error", sync_error=str(exc))
-        return {"error": str(exc)}, 400
+        message = _garmin_error_message(exc)
+        _set_garmin_sync_state(request.user_id, sync_status="error", sync_error=message)
+        return {"error": message}, 400
     except Exception as exc:
+        if _is_garmin_auth_error(exc):
+            message = _garmin_error_message(exc)
+            _set_garmin_sync_state(request.user_id, sync_status="error", sync_error=message)
+            return {"error": message}, 400
         app.logger.exception("Garmin update failed for user %s", request.user_id)
         _set_garmin_sync_state(request.user_id, sync_status="error", sync_error=str(exc))
         return {"error": "update failed"}, 500
@@ -1108,9 +1267,14 @@ def backfill_data():
             "dates": results,
         }
     except RuntimeError as exc:
-        _set_garmin_sync_state(request.user_id, sync_status="error", sync_error=str(exc))
-        return {"error": str(exc)}, 400
+        message = _garmin_error_message(exc)
+        _set_garmin_sync_state(request.user_id, sync_status="error", sync_error=message)
+        return {"error": message}, 400
     except Exception as exc:
+        if _is_garmin_auth_error(exc):
+            message = _garmin_error_message(exc)
+            _set_garmin_sync_state(request.user_id, sync_status="error", sync_error=message)
+            return {"error": message}, 400
         app.logger.exception("Garmin backfill failed for user %s", request.user_id)
         _set_garmin_sync_state(request.user_id, sync_status="error", sync_error=str(exc))
         return {"error": "backfill failed"}, 500
@@ -1129,6 +1293,13 @@ def connect_garmin():
     password = password.strip()
     if not email or not password:
         return {"error": "email and password are required"}, 400
+
+    _clear_garmin_tokens(request.user_id)
+    try:
+        load_client(email=email, password=password, user_id=request.user_id)
+    except Exception as exc:
+        _clear_garmin_tokens(request.user_id)
+        return {"error": _garmin_error_message(exc)}, 400
 
     email_enc = encrypt(email)
     password_enc = encrypt(password)
