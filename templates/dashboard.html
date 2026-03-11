@@ -22,45 +22,101 @@
   <script type="module" src="{{ url_for('static', filename='dashboard/main.js') }}"></script>
 </head>
 <body>
-  <div class="page-shell">
-    <header class="masthead">
-      <div class="masthead-copy">
+  <div class="page-shell app-shell">
+    <header class="app-frame-header">
+      <div class="app-frame-copy">
         <p class="eyebrow">Training Decision Dashboard</p>
-        <h1>Plan first. Analyze second. Sync separately.</h1>
+        <h1>Structured auth, Garmin setup, and dashboard routing.</h1>
         <p class="subcopy">
-          Plan answers what to train next. Analysis explains why. Sync keeps account and Garmin work separate.
+          Authentication, Garmin onboarding, dashboard access, and settings now stay in separate app states.
         </p>
       </div>
       <div class="utility-stack">
-        <nav id="surfaceNav" class="surface-nav" aria-label="Dashboard views">
-          <button class="surface-nav-btn is-active" type="button" data-view="plan">Plan</button>
-          <button class="surface-nav-btn" type="button" data-view="analysis">Analysis</button>
-          <button class="surface-nav-btn" type="button" data-view="sync">Sync</button>
-          <button id="debugNavBtn" class="surface-nav-btn" type="button" data-view="debug" hidden>Debug</button>
+        <nav id="appSectionNav" class="surface-nav" aria-label="Application sections" hidden>
+          <button class="surface-nav-btn" type="button" data-app-nav="dashboard">Dashboard</button>
+          <button class="surface-nav-btn" type="button" data-app-nav="settings">Settings</button>
         </nav>
         <div class="utility-row">
-          <button id="advancedToggleBtn" class="btn btn-secondary utility-toggle" type="button" aria-pressed="false">
-            Debug Off
-          </button>
+          <p data-auth-status class="muted-copy session-label">Not signed in</p>
+          <button id="globalLogoutBtn" class="btn btn-secondary" type="button" hidden>Log Out</button>
         </div>
       </div>
     </header>
 
-    <main class="surface-stack">
-      <section class="surface-panel is-active" data-view-panel="plan">
-        {% include "_plan_view.html" %}
+    <main class="app-stage">
+      <section class="app-view app-loading-view is-active" data-app-view="loading">
+        <article class="panel app-state-panel">
+          <p class="eyebrow">Loading</p>
+          <h2>Checking your session</h2>
+          <p class="muted-copy">Session and Garmin setup are being resolved before the app opens.</p>
+        </article>
       </section>
 
-      <section class="surface-panel" data-view-panel="analysis" hidden>
-        {% include "_analysis_view.html" %}
+      <section class="app-view" data-app-view="auth" hidden>
+        {% include "_auth_view.html" %}
       </section>
 
-      <section class="surface-panel" data-view-panel="sync" hidden>
-        {% include "_sync_view.html" %}
+      <section class="app-view" data-app-view="garminSetup" hidden>
+        {% include "_garmin_setup_view.html" %}
       </section>
 
-      <section id="debugSurface" class="surface-panel surface-panel-debug" data-view-panel="debug" hidden>
-        {% include "_debug_view.html" %}
+      <section class="app-view app-dashboard-view" data-app-view="dashboard" hidden>
+        <header class="masthead">
+          <div class="masthead-copy">
+            <p class="eyebrow">Dashboard</p>
+            <h1>Plan first. Analyze second. Sync separately.</h1>
+            <p class="subcopy">
+              Plan answers what to train next. Analysis explains why. Sync stays focused on data refresh, not login or onboarding.
+            </p>
+          </div>
+          <div class="utility-stack">
+            <nav id="surfaceNav" class="surface-nav" aria-label="Dashboard views">
+              <button class="surface-nav-btn is-active" type="button" data-view="plan">Plan</button>
+              <button class="surface-nav-btn" type="button" data-view="analysis">Analysis</button>
+              <button class="surface-nav-btn" type="button" data-view="sync">Sync</button>
+              <button id="debugNavBtn" class="surface-nav-btn" type="button" data-view="debug" hidden>Debug</button>
+            </nav>
+            <div class="utility-row">
+              <button id="advancedToggleBtn" class="btn btn-secondary utility-toggle" type="button" aria-pressed="false">
+                Debug Off
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <div class="surface-stack">
+          <section class="surface-panel is-active" data-view-panel="plan">
+            {% include "_plan_view.html" %}
+          </section>
+
+          <section class="surface-panel" data-view-panel="analysis" hidden>
+            {% include "_analysis_view.html" %}
+          </section>
+
+          <section class="surface-panel" data-view-panel="sync" hidden>
+            {% include "_sync_view.html" %}
+          </section>
+
+          <section id="debugSurface" class="surface-panel surface-panel-debug" data-view-panel="debug" hidden>
+            {% include "_debug_view.html" %}
+          </section>
+        </div>
+      </section>
+
+      <section class="app-view" data-app-view="settings" hidden>
+        {% include "_settings_view.html" %}
+      </section>
+
+      <section class="app-view" data-app-view="error" hidden>
+        <article class="panel app-state-panel">
+          <p class="eyebrow">Access Error</p>
+          <h2>App state could not be loaded</h2>
+          <p id="appErrorMessage" class="muted-copy">The current session could not be resolved.</p>
+          <div class="button-row">
+            <button id="retryAppStateBtn" class="btn btn-primary" type="button">Retry</button>
+            <button id="errorLogoutBtn" class="btn btn-secondary" type="button">Log Out</button>
+          </div>
+        </article>
       </section>
     </main>
   </div>

@@ -1,0 +1,30 @@
+<section class="auth-shell">
+  <article class="panel auth-flow-card">
+    <p class="eyebrow">Authentication</p>
+    <h2>Sign in or create your account</h2>
+    <p class="muted-copy">
+      Authentication is the only step here. Garmin setup happens after login, in its own onboarding screen.
+    </p>
+    <div class="status-banner status-banner-muted">
+      <strong>Email and password are enabled.</strong>
+      <span>Additional auth providers can be added later through the same auth action flow.</span>
+    </div>
+    <label class="field">
+      <span>Email</span>
+      <input id="authEmail" type="email" placeholder="name@example.com" autocomplete="email">
+    </label>
+    <label class="field">
+      <span>Password</span>
+      <input id="authPassword" type="password" placeholder="Your account password" autocomplete="current-password">
+    </label>
+    <div class="button-row">
+      <button class="btn btn-primary" type="button" data-auth-action="login" data-auth-provider="password">
+        Sign In
+      </button>
+      <button class="btn btn-secondary" type="button" data-auth-action="signup" data-auth-provider="password">
+        Create Account
+      </button>
+    </div>
+    <p data-auth-status class="muted-copy">Not signed in</p>
+  </article>
+</section>

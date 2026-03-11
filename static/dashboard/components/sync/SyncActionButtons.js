@@ -1,7 +1,7 @@
 import { el } from "../../lib/formatters.js";
 
-export function renderSyncActionButtons(sync) {
-  const target = el("syncActionButtons");
+export function renderSyncActionButtons(sync, targetId = "syncActionButtons") {
+  const target = el(targetId);
   if (!target) {
     return;
   }

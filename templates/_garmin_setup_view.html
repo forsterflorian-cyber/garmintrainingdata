@@ -1,0 +1,23 @@
+<section class="flow-shell">
+  <article class="panel flow-card">
+    <p class="eyebrow">Garmin Setup</p>
+    <h2>Connect Garmin before opening the dashboard</h2>
+    <p class="muted-copy">
+      You are signed in. Garmin credentials are required once for the initial setup and can be updated later in settings.
+    </p>
+    <p id="setupAccountEmail" class="muted-copy">Account: -</p>
+    <p data-garmin-status class="muted-copy">Enter your Garmin email and password to continue.</p>
+    <label class="field">
+      <span>Garmin Email</span>
+      <input id="setupGarminEmail" type="email" placeholder="your-garmin-login@example.com" autocomplete="username">
+    </label>
+    <label class="field">
+      <span>Garmin Password</span>
+      <input id="setupGarminPassword" type="password" placeholder="Your Garmin password" autocomplete="current-password">
+    </label>
+    <div class="button-row">
+      <button class="btn btn-primary" type="button" data-garmin-submit="setup">Connect Garmin</button>
+      <button class="btn btn-secondary" type="button" data-logout>Log Out</button>
+    </div>
+  </article>
+</section>

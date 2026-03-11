@@ -1,0 +1,54 @@
+<section class="surface-intro">
+  <div>
+    <p class="eyebrow">Settings</p>
+    <h2>Account and Garmin management</h2>
+    <p class="muted-copy">
+      Manage account access and Garmin credentials here. Dashboard access stays protected by the setup state.
+    </p>
+  </div>
+  <div class="button-row">
+    <button id="settingsDashboardBtn" class="btn btn-secondary" type="button">Open Dashboard</button>
+  </div>
+</section>
+
+<div id="settingsAlert" class="status-banner" hidden></div>
+
+<section class="auth-grid settings-grid">
+  <article class="panel auth-panel">
+    <div class="panel-head-space">
+      <div>
+        <p class="eyebrow">Account</p>
+        <h2>Session</h2>
+      </div>
+      <p data-auth-status class="muted-copy">Not signed in</p>
+    </div>
+    <p class="muted-copy">
+      Account authentication is separate from Garmin configuration. Logging out always returns to the auth screen.
+    </p>
+    <div class="button-row">
+      <button class="btn btn-secondary" type="button" data-logout>Log Out</button>
+    </div>
+  </article>
+
+  <article class="panel auth-panel">
+    <div class="panel-head-space">
+      <div>
+        <p class="eyebrow">Garmin</p>
+        <h2>Reconnect or update Garmin</h2>
+      </div>
+    </div>
+    <p data-garmin-status class="muted-copy">Update Garmin credentials here when the connection changes.</p>
+    <label class="field">
+      <span>Garmin Email</span>
+      <input id="settingsGarminEmail" type="email" placeholder="your-garmin-login@example.com" autocomplete="username">
+    </label>
+    <label class="field">
+      <span>Garmin Password</span>
+      <input id="settingsGarminPassword" type="password" placeholder="Your Garmin password" autocomplete="current-password">
+    </label>
+    <div class="button-row">
+      <button class="btn btn-primary" type="button" data-garmin-submit="settings">Save Garmin Credentials</button>
+    </div>
+    <div id="settingsSyncStatusPanel" class="sync-status-panel"></div>
+  </article>
+</section>

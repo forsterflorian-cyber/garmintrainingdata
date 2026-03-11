@@ -1,15 +1,13 @@
-import { el, safeText } from "../../lib/formatters.js";
+import { safeText } from "../../lib/formatters.js";
 
 export function setAuthStatus(text) {
-  const target = el("authStatus");
-  if (target) {
+  document.querySelectorAll("[data-auth-status]").forEach((target) => {
     target.textContent = safeText(text);
-  }
+  });
 }
 
 export function setGarminStatus(text) {
-  const target = el("garminStatus");
-  if (target) {
+  document.querySelectorAll("[data-garmin-status]").forEach((target) => {
     target.textContent = safeText(text);
-  }
+  });
 }

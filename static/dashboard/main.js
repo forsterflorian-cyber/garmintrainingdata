@@ -18,6 +18,21 @@ import { computeNextDaysOutlook } from "./lib/outlookForecast.js";
 
 const APP_CONFIG = window.__APP_CONFIG__ || {};
 const SURFACE_VIEWS = ["plan", "analysis", "sync", "debug"];
+const APP_VIEWS = ["loading", "auth", "garminSetup", "dashboard", "settings", "error"];
+const APP_ROUTE_PATHS = Object.freeze({
+  auth: "/auth",
+  garminSetup: "/onboarding/garmin",
+  dashboard: "/dashboard",
+  settings: "/settings",
+});
+const AUTH_PROVIDERS = Object.freeze({
+  password: {
+    id: "password",
+    kind: "password",
+    label: "Email and password",
+    supportedActions: ["login", "signup"],
+  },
+});
 const ADVANCED_MODE_KEY = "dashboard.advancedMode";
 
 function loadAdvancedModePreference() {
@@ -30,6 +45,9 @@ function loadAdvancedModePreference() {
 
 const state = {
   currentSession: null,
+  appState: null,
+  appStateError: null,
+  appView: "loading",
   dashboard: null,
   selectedDate: null,
   rangeDays: APP_CONFIG.defaultRangeDays || 28,
@@ -63,22 +81,67 @@ function requireSupabaseClient() {
 
 function missingConfigMessage() {
   const missing = APP_CONFIG.missingPublicConfig || [];
-  return missing.length ? `Missing Supabase Config: ${missing.join(", ")}` : "Missing Supabase Config.";
+  return missing.length ? `Missing Supabase config: ${missing.join(", ")}` : "Missing Supabase config.";
 }
 
-function authRedirectUrl() {
-  const url = new URL(window.location.href);
-  url.hash = "";
-  url.search = "";
-  return url.toString();
+function authCallbackUrl() {
+  return new URL(APP_ROUTE_PATHS.dashboard, window.location.origin).toString();
+}
+
+function normalizedPathname(pathname = window.location.pathname) {
+  if (!pathname || pathname === "/") {
+    return "/";
+  }
+  return pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
+}
+
+function requestedAppViewFromPath() {
+  const pathname = normalizedPathname();
+  if (pathname === APP_ROUTE_PATHS.auth) {
+    return "auth";
+  }
+  if (pathname === APP_ROUTE_PATHS.garminSetup) {
+    return "garminSetup";
+  }
+  if (pathname === APP_ROUTE_PATHS.dashboard) {
+    return "dashboard";
+  }
+  if (pathname === APP_ROUTE_PATHS.settings) {
+    return "settings";
+  }
+  return null;
+}
+
+function routePathForAppView(view) {
+  if (view === "auth") {
+    return APP_ROUTE_PATHS.auth;
+  }
+  if (view === "garminSetup") {
+    return APP_ROUTE_PATHS.garminSetup;
+  }
+  if (view === "dashboard") {
+    return APP_ROUTE_PATHS.dashboard;
+  }
+  if (view === "settings") {
+    return APP_ROUTE_PATHS.settings;
+  }
+  return normalizedPathname();
 }
 
 function currentUserId() {
   return state.currentSession?.user?.id || null;
 }
 
+function currentUserEmail() {
+  return state.currentSession?.user?.email || null;
+}
+
 function isSyncActive(syncState) {
   return syncState === "syncing" || syncState === "backfilling";
+}
+
+function isUnauthorizedError(error) {
+  return Number(error?.status) === 401;
 }
 
 function debugSurfaceAllowed() {
@@ -108,14 +171,22 @@ function persistAdvancedModePreference() {
   }
 }
 
-function syncLocationWithView(view) {
-  if (view === "plan") {
-    const nextUrl = `${window.location.pathname}${window.location.search}`;
-    window.history.replaceState(null, "", nextUrl);
+function syncAppLocation({ replaceHistory = false } = {}) {
+  const basePath = routePathForAppView(state.appView);
+  const hash = state.appView === "dashboard" && state.activeView !== "plan" ? `#${state.activeView}` : "";
+  const nextUrl = `${basePath}${hash}`;
+  const currentUrl = `${window.location.pathname}${window.location.hash}`;
+  if (currentUrl === nextUrl) {
     return;
   }
-  if (window.location.hash !== `#${view}`) {
-    window.location.hash = view;
+  const method = replaceHistory ? "replaceState" : "pushState";
+  window.history[method](null, "", nextUrl);
+}
+
+function syncLocationWithView(view) {
+  state.activeView = resolveSurfaceView(view);
+  if (state.appView === "dashboard") {
+    syncAppLocation({ replaceHistory: true });
   }
 }
 
@@ -158,50 +229,128 @@ function setActiveView(view, options = {}) {
   syncSurfaceUi(options);
 }
 
-function setControlsDisabled(disabled) {
-  ["garminEmail", "garminPassword", "connectGarminBtn"].forEach((id) => {
-    const node = el(id);
-    if (node) {
-      node.disabled = disabled;
-    }
+function updateSettingsAlert() {
+  const alert = el("settingsAlert");
+  if (!alert) {
+    return;
+  }
+
+  if (state.appState?.garmin?.needsReconnect) {
+    alert.hidden = false;
+    alert.className = "status-banner status-banner-critical";
+    alert.innerHTML = `
+      <strong>Dashboard access is paused.</strong>
+      <span>${safeHtml(state.appState.garmin.message || "Reconnect Garmin in settings.")}</span>
+    `;
+    return;
+  }
+
+  alert.hidden = true;
+  alert.textContent = "";
+  alert.className = "status-banner";
+}
+
+function updatePageTitle() {
+  const labels = {
+    auth: "Auth",
+    garminSetup: "Garmin Setup",
+    dashboard: "Dashboard",
+    settings: "Settings",
+    error: "Access Error",
+    loading: "Loading",
+  };
+  document.title = `Training Decision Dashboard | ${labels[state.appView] || "Dashboard"}`;
+}
+
+function syncAppUi({ replaceHistory = false } = {}) {
+  state.appView = APP_VIEWS.includes(state.appView) ? state.appView : "loading";
+
+  document.querySelectorAll("[data-app-view]").forEach((panel) => {
+    const isActive = panel.dataset.appView === state.appView;
+    panel.classList.toggle("is-active", isActive);
+    panel.hidden = !isActive;
   });
+
+  const appSectionNav = el("appSectionNav");
+  const isAuthenticated = Boolean(state.currentSession?.access_token);
+  if (appSectionNav) {
+    const showNav = isAuthenticated && !["auth", "loading", "error", "garminSetup"].includes(state.appView);
+    appSectionNav.hidden = !showNav;
+    appSectionNav.querySelectorAll("[data-app-nav]").forEach((button) => {
+      const targetView = button.dataset.appNav;
+      const isSettings = targetView === "settings";
+      const allowed = isSettings ? Boolean(state.appState?.settingsAccessible) : Boolean(state.appState?.dashboardAccessible);
+      button.hidden = !showNav || !allowed;
+      const isActive = targetView === state.appView;
+      button.classList.toggle("is-active", isActive);
+      button.setAttribute("aria-current", isActive ? "page" : "false");
+    });
+  }
+
+  const globalLogoutBtn = el("globalLogoutBtn");
+  if (globalLogoutBtn) {
+    globalLogoutBtn.hidden = !isAuthenticated;
+  }
+
+  const settingsDashboardBtn = el("settingsDashboardBtn");
+  if (settingsDashboardBtn) {
+    const dashboardAllowed = Boolean(state.appState?.dashboardAccessible);
+    settingsDashboardBtn.hidden = !dashboardAllowed;
+    settingsDashboardBtn.disabled = !dashboardAllowed;
+  }
+
+  if (state.appView === "dashboard") {
+    syncSurfaceUi({ syncHash: false });
+  }
+
+  updateSettingsAlert();
+  updatePageTitle();
+  syncAppLocation({ replaceHistory });
 }
 
 function setAuthUi(user) {
   const loggedIn = Boolean(user);
-  el("loginBtn").hidden = loggedIn;
-  el("signupBtn").hidden = loggedIn;
-  el("logoutBtn").hidden = !loggedIn;
-  setControlsDisabled(!loggedIn);
+  document.querySelectorAll("[data-logout]").forEach((button) => {
+    button.hidden = !loggedIn;
+  });
+
+  const setupAccountEmail = el("setupAccountEmail");
+  if (setupAccountEmail) {
+    setupAccountEmail.textContent = user?.email ? `Account: ${user.email}` : "Account: -";
+  }
+}
+
+function buildApiError(response, payload) {
+  const error = new Error(payload?.error || `HTTP ${response.status}`);
+  error.status = response.status;
+  return error;
 }
 
 async function getToken() {
   requireSupabaseClient();
-  return state.currentSession?.access_token || null;
+  const token = state.currentSession?.access_token || null;
+  if (!token) {
+    const error = new Error("Sign in first.");
+    error.status = 401;
+    throw error;
+  }
+  return token;
 }
 
 async function apiGet(url) {
   const token = await getToken();
-  if (!token) {
-    throw new Error("Sign in first.");
-  }
-
   const response = await fetch(url, {
     headers: { Authorization: `Bearer ${token}` },
   });
   const json = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(json.error || `HTTP ${response.status}`);
+    throw buildApiError(response, json);
   }
   return json;
 }
 
 async function apiPost(url, body = null) {
   const token = await getToken();
-  if (!token) {
-    throw new Error("Sign in first.");
-  }
-
   const response = await fetch(url, {
     method: "POST",
     headers: {
@@ -212,9 +361,103 @@ async function apiPost(url, body = null) {
   });
   const json = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(json.error || `HTTP ${response.status}`);
+    throw buildApiError(response, json);
   }
   return json;
+}
+
+function authProvider(providerId) {
+  return AUTH_PROVIDERS[providerId] || null;
+}
+
+function authCredentials() {
+  return {
+    email: el("authEmail")?.value.trim() || "",
+    password: el("authPassword")?.value || "",
+  };
+}
+
+function garminFieldIdsForContext(context) {
+  return context === "settings"
+    ? { emailId: "settingsGarminEmail", passwordId: "settingsGarminPassword" }
+    : { emailId: "setupGarminEmail", passwordId: "setupGarminPassword" };
+}
+
+function garminCredentialsForContext(context) {
+  const { emailId, passwordId } = garminFieldIdsForContext(context);
+  return {
+    email: el(emailId)?.value.trim() || "",
+    password: el(passwordId)?.value.trim() || "",
+  };
+}
+
+function resolveAllowedAppView(preferredView = requestedAppViewFromPath()) {
+  if (!state.currentSession?.access_token) {
+    return "auth";
+  }
+  if (state.appStateError) {
+    return "error";
+  }
+  if (!state.appState) {
+    return "loading";
+  }
+  if (state.appState.phase === "garmin_setup") {
+    return "garminSetup";
+  }
+  if (state.appState.phase === "settings") {
+    return "settings";
+  }
+  if (preferredView === "settings") {
+    return "settings";
+  }
+  return "dashboard";
+}
+
+function applyAppState(appState) {
+  state.appState = appState;
+  state.appStateError = null;
+  state.syncStatus = appState?.sync || null;
+  setGarminStatus(appState?.garmin?.message || "Garmin status unavailable.");
+  renderSyncStatusPanel(state.syncStatus || {}, "settingsSyncStatusPanel");
+  updateSettingsAlert();
+}
+
+async function activateAppView(view, { replaceHistory = false, loadDashboardIfNeeded = true } = {}) {
+  state.appView = view;
+  if (view !== "dashboard") {
+    stopSyncPolling();
+  }
+  syncAppUi({ replaceHistory });
+
+  if (view === "dashboard" && loadDashboardIfNeeded) {
+    await loadDashboard();
+  } else if (view !== "dashboard") {
+    renderSyncStatusPanel(state.syncStatus || {}, "settingsSyncStatusPanel");
+  }
+}
+
+async function refreshAppState({ requestedView = requestedAppViewFromPath(), replaceHistory = false, loadDashboardIfNeeded = true } = {}) {
+  if (!state.currentSession?.access_token) {
+    setLoggedOutState();
+    return;
+  }
+
+  try {
+    const payload = await apiGet("/api/app-state");
+    applyAppState(payload);
+    await activateAppView(resolveAllowedAppView(requestedView), { replaceHistory, loadDashboardIfNeeded });
+  } catch (error) {
+    if (isUnauthorizedError(error)) {
+      await handleUnauthorizedSession("Session expired. Sign in again.");
+      return;
+    }
+    state.appStateError = error.message;
+    const errorMessage = el("appErrorMessage");
+    if (errorMessage) {
+      errorMessage.textContent = `App state could not be loaded: ${error.message}`;
+    }
+    await activateAppView("error", { replaceHistory, loadDashboardIfNeeded: false });
+  }
 }
 
 function dashboardUrl() {
@@ -268,6 +511,7 @@ function renderSyncUi(sync = state.syncStatus) {
   renderSyncStatusBadge(sync || {});
   renderSyncStatusPanel(sync || {});
   renderSyncActionButtons(sync || {});
+  renderSyncStatusPanel(sync || {}, "settingsSyncStatusPanel");
   bindSyncActionButtons();
 
   if (el("planSyncMeta")) {
@@ -528,6 +772,10 @@ async function refreshSyncStatus({ reloadDashboardOnTerminal = false } = {}) {
     const payload = await apiGet("/api/sync/status");
     state.syncStatus = payload;
     renderSyncUi(payload);
+    if (payload.syncState === "blocked") {
+      await refreshAppState({ requestedView: "settings", replaceHistory: true, loadDashboardIfNeeded: false });
+      return;
+    }
     if (isSyncActive(payload.syncState)) {
       startSyncPolling();
     } else {
@@ -538,7 +786,11 @@ async function refreshSyncStatus({ reloadDashboardOnTerminal = false } = {}) {
     }
   } catch (error) {
     stopSyncPolling();
-    setGarminStatus(`Sync Status Error: ${error.message}`);
+    if (isUnauthorizedError(error)) {
+      await handleUnauthorizedSession("Session expired. Sign in again.");
+      return;
+    }
+    setGarminStatus(`Sync status error: ${error.message}`);
   } finally {
     state.syncPollInFlight = false;
   }
@@ -574,19 +826,34 @@ async function startSyncRequest(url, body, optimisticState) {
     const response = await apiPost(url, body);
     state.syncStatus = response;
     renderSyncUi(response);
+    if (response.syncState === "blocked") {
+      await refreshAppState({ requestedView: "settings", replaceHistory: true, loadDashboardIfNeeded: false });
+      return;
+    }
     if (isSyncActive(response.syncState)) {
       startSyncPolling();
     } else {
       stopSyncPolling();
-      await loadDashboard({ skipAutoSync: true });
+      if (state.appView === "dashboard") {
+        await loadDashboard({ skipAutoSync: true });
+      } else {
+        await refreshAppState({ requestedView: state.appView, replaceHistory: true, loadDashboardIfNeeded: false });
+      }
     }
   } catch (error) {
-    setGarminStatus(`Sync Error: ${error.message}`);
+    if (isUnauthorizedError(error)) {
+      await handleUnauthorizedSession("Session expired. Sign in again.");
+      return;
+    }
+    setGarminStatus(`Sync error: ${error.message}`);
     await refreshSyncStatus({ reloadDashboardOnTerminal: false });
   }
 }
 
 function maybeAutoSync() {
+  if (state.appView !== "dashboard") {
+    return;
+  }
   const sync = state.dashboard?.sync;
   if (!sync?.autoSyncEnabled || !sync?.autoSyncRecommended) {
     return;
@@ -610,18 +877,24 @@ function maybeAutoSync() {
 }
 
 async function loadDashboard({ skipAutoSync = false } = {}) {
+  if (!state.currentSession?.access_token || !state.appState?.dashboardAccessible) {
+    return;
+  }
+
   try {
     const payload = await apiGet(dashboardUrl());
     state.dashboard = payload;
     state.selectedDate = payload?.date || state.selectedDate;
     state.syncStatus = payload?.sync || null;
     renderDashboard();
+    renderSyncStatusPanel(state.syncStatus || {}, "settingsSyncStatusPanel");
 
-    if (payload?.account?.connected) {
-      setGarminStatus(syncStatusSummary(payload.sync));
-    } else {
-      setGarminStatus("Garmin not connected.");
+    if (payload?.sync?.syncState === "blocked") {
+      await refreshAppState({ requestedView: "settings", replaceHistory: true, loadDashboardIfNeeded: false });
+      return;
     }
+
+    setGarminStatus(syncStatusSummary(payload.sync));
 
     if (isSyncActive(payload?.sync?.syncState)) {
       startSyncPolling();
@@ -633,48 +906,82 @@ async function loadDashboard({ skipAutoSync = false } = {}) {
       maybeAutoSync();
     }
   } catch (error) {
-    if (String(error.message || "").toLowerCase().includes("sign in")) {
-      setLoggedOutState();
+    if (isUnauthorizedError(error)) {
+      await handleUnauthorizedSession("Session expired. Sign in again.");
       return;
     }
     setGarminStatus(`Error: ${error.message}`);
   }
 }
 
-function setLoggedOutState() {
+function setLoggedOutState({ authMessage = "Not signed in", garminMessage = "Sign in to connect Garmin." } = {}) {
+  state.appState = null;
+  state.appStateError = null;
+  state.appView = "auth";
   state.dashboard = null;
   state.selectedDate = null;
   state.syncStatus = null;
   state.autoSyncKey = null;
   stopSyncPolling();
   renderDashboard();
-  setGarminStatus("Sign in to reconnect Garmin.");
+  renderSyncStatusPanel({}, "settingsSyncStatusPanel");
+  setAuthUi(null);
+  setAuthStatus(authMessage);
+  setGarminStatus(garminMessage);
+  syncAppUi({ replaceHistory: true });
 }
 
-async function login() {
-  const email = el("loginEmail").value;
-  const password = el("loginPassword").value;
-  const { error } = await requireSupabaseClient().auth.signInWithPassword({ email, password });
-  if (error) {
-    alert(error.message);
+async function handleUnauthorizedSession(message) {
+  if (supabaseClient) {
+    try {
+      await supabaseClient.auth.signOut();
+    } catch (_error) {
+      // Ignore sign-out cleanup errors and still reset the local state.
+    }
+  }
+  state.currentSession = null;
+  setLoggedOutState({ authMessage: message, garminMessage: message });
+}
+
+async function performAuthAction(action, providerId) {
+  const provider = authProvider(providerId);
+  if (!provider || !provider.supportedActions.includes(action)) {
+    setAuthStatus("This authentication method is not available.");
     return;
   }
-  setAuthStatus("Signed in. Loading session...");
-}
 
-async function signup() {
-  const email = el("loginEmail").value;
-  const password = el("loginPassword").value;
-  const { error } = await requireSupabaseClient().auth.signUp({
+  if (provider.kind !== "password") {
+    setAuthStatus("This authentication provider is not configured yet.");
+    return;
+  }
+
+  const { email, password } = authCredentials();
+  if (!email || !password) {
+    setAuthStatus("Enter email and password.");
+    return;
+  }
+
+  const client = requireSupabaseClient();
+  if (action === "login") {
+    const { error } = await client.auth.signInWithPassword({ email, password });
+    if (error) {
+      setAuthStatus(error.message);
+      return;
+    }
+    setAuthStatus("Signed in. Loading session...");
+    return;
+  }
+
+  const { error } = await client.auth.signUp({
     email,
     password,
-    options: { emailRedirectTo: authRedirectUrl() },
+    options: { emailRedirectTo: authCallbackUrl() },
   });
   if (error) {
-    alert(error.message);
+    setAuthStatus(error.message);
     return;
   }
-  alert("Sign-up started. Confirm your email if required.");
+  setAuthStatus("Sign-up started. Confirm your email if required.");
 }
 
 async function logout() {
@@ -682,15 +989,12 @@ async function logout() {
     await supabaseClient.auth.signOut();
   }
   state.currentSession = null;
-  setAuthUi(null);
-  setAuthStatus("Not Signed In");
   setLoggedOutState();
 }
 
-async function connectGarmin() {
+async function submitGarminCredentials(context) {
   try {
-    const email = el("garminEmail").value.trim();
-    const password = el("garminPassword").value.trim();
+    const { email, password } = garminCredentialsForContext(context);
     if (!email || !password) {
       setGarminStatus("Enter Garmin email and password.");
       return;
@@ -698,10 +1002,14 @@ async function connectGarmin() {
     setGarminStatus("Checking Garmin credentials...");
     await apiPost("/api/garmin/connect", { email, password });
     setGarminStatus("Garmin connected.");
-    await loadDashboard();
+    await refreshAppState({ requestedView: "dashboard", replaceHistory: true, loadDashboardIfNeeded: true });
   } catch (error) {
+    if (isUnauthorizedError(error)) {
+      await handleUnauthorizedSession("Session expired. Sign in again.");
+      return;
+    }
     setGarminStatus(`Error: ${error.message}`);
-    await refreshSyncStatus({ reloadDashboardOnTerminal: false });
+    await refreshAppState({ requestedView: state.appView, replaceHistory: true, loadDashboardIfNeeded: false });
   }
 }
 
@@ -802,20 +1110,72 @@ function bindAdvancedToggle() {
   });
 
   window.addEventListener("hashchange", () => {
-    setActiveView(requestedViewFromHash(), { syncHash: false });
+    if (state.appView === "dashboard") {
+      setActiveView(requestedViewFromHash(), { syncHash: false });
+    }
+  });
+}
+
+function bindAppNavigation() {
+  document.querySelectorAll("[data-app-nav]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const targetView = button.dataset.appNav;
+      if (targetView === "settings") {
+        void activateAppView("settings", { replaceHistory: false, loadDashboardIfNeeded: false });
+      } else if (targetView === "dashboard" && state.appState?.dashboardAccessible) {
+        void activateAppView("dashboard", { replaceHistory: false, loadDashboardIfNeeded: true });
+      }
+    });
   });
 }
 
 function bindEvents() {
   bindSurfaceNav();
   bindAdvancedToggle();
+  bindAppNavigation();
   hydrateRangeSelect(APP_CONFIG.rangeFilters || [7, 14, 28, 84, 365], state.rangeDays);
   bindTabs();
 
-  el("loginBtn").addEventListener("click", login);
-  el("signupBtn").addEventListener("click", signup);
-  el("logoutBtn").addEventListener("click", logout);
-  el("connectGarminBtn").addEventListener("click", connectGarmin);
+  document.querySelectorAll("[data-auth-action]").forEach((button) => {
+    button.addEventListener("click", () => {
+      void performAuthAction(button.dataset.authAction, button.dataset.authProvider);
+    });
+  });
+
+  document.querySelectorAll("[data-logout]").forEach((button) => {
+    button.addEventListener("click", () => {
+      void logout();
+    });
+  });
+
+  const globalLogoutBtn = el("globalLogoutBtn");
+  if (globalLogoutBtn) {
+    globalLogoutBtn.addEventListener("click", () => {
+      void logout();
+    });
+  }
+
+  document.querySelectorAll("[data-garmin-submit]").forEach((button) => {
+    button.addEventListener("click", () => {
+      void submitGarminCredentials(button.dataset.garminSubmit);
+    });
+  });
+
+  const syncSettingsBtn = el("syncSettingsBtn");
+  if (syncSettingsBtn) {
+    syncSettingsBtn.addEventListener("click", () => {
+      void activateAppView("settings", { replaceHistory: false, loadDashboardIfNeeded: false });
+    });
+  }
+
+  const settingsDashboardBtn = el("settingsDashboardBtn");
+  if (settingsDashboardBtn) {
+    settingsDashboardBtn.addEventListener("click", () => {
+      if (state.appState?.dashboardAccessible) {
+        void activateAppView("dashboard", { replaceHistory: false, loadDashboardIfNeeded: true });
+      }
+    });
+  }
 
   el("rangeSelect").addEventListener("change", (event) => {
     state.rangeDays = Number(event.target.value);
@@ -841,13 +1201,40 @@ function bindEvents() {
       }, 1200);
     }
   });
+
+  const retryAppStateBtn = el("retryAppStateBtn");
+  if (retryAppStateBtn) {
+    retryAppStateBtn.addEventListener("click", () => {
+      void refreshAppState({ requestedView: requestedAppViewFromPath(), replaceHistory: true, loadDashboardIfNeeded: state.appView === "dashboard" });
+    });
+  }
+
+  const errorLogoutBtn = el("errorLogoutBtn");
+  if (errorLogoutBtn) {
+    errorLogoutBtn.addEventListener("click", () => {
+      void logout();
+    });
+  }
+
+  window.addEventListener("popstate", () => {
+    state.activeView = resolveSurfaceView(requestedViewFromHash());
+    void routeFromLocation();
+  });
+}
+
+async function routeFromLocation() {
+  const requestedView = requestedAppViewFromPath();
+  const resolvedView = resolveAllowedAppView(requestedView);
+  const loadDashboardIfNeeded = resolvedView === "dashboard" && state.appView !== "dashboard";
+  await activateAppView(resolvedView, { replaceHistory: true, loadDashboardIfNeeded });
 }
 
 async function restoreSession() {
   if (!supabaseClient) {
-    setAuthStatus(missingConfigMessage());
-    setGarminStatus(missingConfigMessage());
-    renderDashboard();
+    setLoggedOutState({
+      authMessage: missingConfigMessage(),
+      garminMessage: missingConfigMessage(),
+    });
     return;
   }
 
@@ -855,10 +1242,14 @@ async function restoreSession() {
   state.currentSession = data?.session || null;
   const user = state.currentSession?.user || null;
   setAuthUi(user);
-  setAuthStatus(user ? `Signed in as ${user.email}` : "Not Signed In");
+  setAuthStatus(user ? `Signed in as ${user.email}` : "Not signed in");
 
   if (state.currentSession?.access_token) {
-    await loadDashboard();
+    await refreshAppState({
+      requestedView: requestedAppViewFromPath(),
+      replaceHistory: normalizedPathname() === "/",
+      loadDashboardIfNeeded: true,
+    });
   } else {
     setLoggedOutState();
   }
@@ -869,10 +1260,14 @@ if (supabaseClient) {
     state.currentSession = session || null;
     const user = state.currentSession?.user || null;
     setAuthUi(user);
-    setAuthStatus(user ? `Signed in as ${user.email}` : "Not Signed In");
+    setAuthStatus(user ? `Signed in as ${user.email}` : "Not signed in");
     window.setTimeout(async () => {
       if (state.currentSession?.access_token) {
-        await loadDashboard();
+        await refreshAppState({
+          requestedView: requestedAppViewFromPath(),
+          replaceHistory: true,
+          loadDashboardIfNeeded: true,
+        });
       } else {
         setLoggedOutState();
       }
@@ -885,4 +1280,6 @@ bindEvents();
 syncSurfaceUi({ syncHash: false });
 setAuthUi(null);
 renderDashboard();
+renderSyncStatusPanel({}, "settingsSyncStatusPanel");
+syncAppUi({ replaceHistory: false });
 restoreSession();

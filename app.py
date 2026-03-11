@@ -9,6 +9,7 @@ from flask import Flask, jsonify, render_template, request
 from auth_supabase import require_user
 from backend.routes.dashboard import create_dashboard_blueprint
 from backend.routes.sync import create_sync_blueprint
+from backend.services.app_flow_service import build_authenticated_app_state
 from backend.services.sync_errors import classify_sync_error
 from backend.services.sync_runner import SyncRunner
 from backend.services.sync_status_service import SyncStatusService
@@ -95,6 +96,18 @@ def _sync_summary(user_id: str) -> Dict[str, Any]:
     return sync_runner.get_status_payload(user_id, include_debug=DEBUG_MODE)
 
 
+def _render_app_shell():
+    return render_template(
+        "dashboard.html",
+        supabase_url=os.environ.get("SUPABASE_URL", ""),
+        supabase_anon_key=os.environ.get("SUPABASE_ANON_KEY", ""),
+        missing_public_config=_missing_public_config(),
+        range_filters=list(TRAINING_CONFIG.windows.range_filters),
+        default_range_days=TRAINING_CONFIG.windows.default_dashboard_range,
+        debug_mode=DEBUG_MODE,
+    )
+
+
 app.register_blueprint(
     create_dashboard_blueprint(
         fetch_rows=_fetch_rows_for_user,
@@ -156,15 +169,35 @@ def handle_unexpected_error(exc: Exception):
 
 @app.get("/")
 def index():
-    return render_template(
-        "dashboard.html",
-        supabase_url=os.environ.get("SUPABASE_URL", ""),
-        supabase_anon_key=os.environ.get("SUPABASE_ANON_KEY", ""),
-        missing_public_config=_missing_public_config(),
-        range_filters=list(TRAINING_CONFIG.windows.range_filters),
-        default_range_days=TRAINING_CONFIG.windows.default_dashboard_range,
-        debug_mode=DEBUG_MODE,
-    )
+    return _render_app_shell()
+
+
+@app.get("/auth")
+def auth_view():
+    return _render_app_shell()
+
+
+@app.get("/dashboard")
+def dashboard_view():
+    return _render_app_shell()
+
+
+@app.get("/settings")
+def settings_view():
+    return _render_app_shell()
+
+
+@app.get("/onboarding/garmin")
+def garmin_onboarding_view():
+    return _render_app_shell()
+
+
+@app.get("/api/app-state")
+@require_user
+def app_state():
+    sync_status = _sync_summary(request.user_id)
+    account = store.fetch_account(request.user_id)
+    return jsonify(build_authenticated_app_state(account, sync_status))
 
 
 @app.get("/api/history")

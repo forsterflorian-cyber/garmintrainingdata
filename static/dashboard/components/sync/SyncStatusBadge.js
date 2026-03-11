@@ -1,7 +1,7 @@
 import { el, safeHtml, safeText } from "../../lib/formatters.js";
 
-export function renderSyncStatusBadge(sync) {
-  const target = el("syncStatusBadge");
+export function renderSyncStatusBadge(sync, targetId = "syncStatusBadge") {
+  const target = el(targetId);
   if (!target) {
     return;
   }

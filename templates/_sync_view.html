@@ -1,55 +1,24 @@
 <section class="surface-intro">
   <div>
     <p class="eyebrow">Sync</p>
-    <h2>Account, Garmin Credentials, And Sync</h2>
+    <h2>Sync status and manual refresh</h2>
     <p class="muted-copy">
-      Sign in, reconnect Garmin, run updates or backfills, and inspect sync status here.
+      Run updates or backfills here. Garmin credential changes live in settings, not inside the dashboard.
     </p>
+  </div>
+  <div class="button-row">
+    <button id="syncSettingsBtn" class="btn btn-secondary" type="button">Open Settings</button>
   </div>
 </section>
 
-<section class="auth-grid sync-grid">
-  <article class="panel auth-panel">
+<section class="dashboard-grid sync-grid">
+  <article class="panel span-12">
     <div class="panel-head-space">
       <div>
-        <p class="eyebrow">Account</p>
-        <h2>Supabase Login</h2>
+        <p class="eyebrow">Garmin Sync</p>
+        <h2>Current sync state</h2>
       </div>
-      <p id="authStatus" class="muted-copy">Not Signed In</p>
-    </div>
-    <label class="field">
-      <span>Email</span>
-      <input id="loginEmail" type="email" placeholder="name@example.com">
-    </label>
-    <label class="field">
-      <span>Password</span>
-      <input id="loginPassword" type="password" placeholder="Your Dashboard Password">
-    </label>
-    <div class="button-row">
-      <button id="loginBtn" class="btn btn-primary" type="button">Sign In</button>
-      <button id="signupBtn" class="btn btn-secondary" type="button">Sign Up</button>
-      <button id="logoutBtn" class="btn btn-secondary" type="button" hidden>Log Out</button>
-    </div>
-  </article>
-
-  <article class="panel auth-panel">
-    <div class="panel-head-space">
-      <div>
-        <p class="eyebrow">Garmin Connect</p>
-        <h2>Garmin Sync</h2>
-      </div>
-    </div>
-    <p id="garminStatus" class="muted-copy">Sign in to reconnect Garmin.</p>
-    <label class="field">
-      <span>Garmin Email</span>
-      <input id="garminEmail" type="email" placeholder="your-garmin-login@example.com" disabled>
-    </label>
-    <label class="field">
-      <span>Garmin Password</span>
-      <input id="garminPassword" type="password" placeholder="Your Garmin Password" disabled>
-    </label>
-    <div class="button-row">
-      <button id="connectGarminBtn" class="btn btn-primary" type="button" disabled>Reconnect Garmin</button>
+      <p data-garmin-status class="muted-copy">Garmin sync status will appear here.</p>
     </div>
     <div id="syncStatusPanel" class="sync-status-panel"></div>
     <div id="syncActionButtons" class="button-row sync-action-row"></div>

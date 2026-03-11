@@ -1,8 +1,8 @@
 import { el, formatDateTime, formatRelativeHours, safeHtml, safeText } from "../../lib/formatters.js";
 import { syncLabelForState, syncToneForState } from "./SyncStatusBadge.js";
 
-export function renderSyncStatusPanel(sync) {
-  const target = el("syncStatusPanel");
+export function renderSyncStatusPanel(sync, targetId = "syncStatusPanel") {
+  const target = el(targetId);
   if (!target) {
     return;
   }
