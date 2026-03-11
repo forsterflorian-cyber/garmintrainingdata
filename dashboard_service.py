@@ -185,6 +185,7 @@ def build_dashboard_payload(
             "pulseOx": focus_item.get("pulseOx"),
             "recommendationDay": focus_item["recommendationDay"],
             "activities": focus_item["activities"],
+            "sessionType": focus_item.get("sessionType"),
         },
         "baseline": focus_item["baseline"],
         "load": focus_item["load"],
@@ -217,6 +218,7 @@ def build_dashboard_payload(
                     "loadDay": item.get("loadDay"),
                     "ratio7to28": item.get("ratio7to28"),
                     "primaryRecommendation": item["decision"]["primaryRecommendation"],
+                    "sessionType": item.get("sessionType"),
                     "decision": item["decision"],
                     "activities": item["activities"],
                     "legacyRecommendations": item["legacyRecommendations"],
@@ -231,6 +233,7 @@ def build_dashboard_payload(
         "summary": summary,
         "detail": {
             "activeDate": focus_item["date"],
+            "sessionType": focus_item.get("sessionType"),
             "activities": focus_item["activities"],
             "legacyRecommendations": focus_item["legacyRecommendations"],
             "legacyUnits": focus_item["legacyUnits"],

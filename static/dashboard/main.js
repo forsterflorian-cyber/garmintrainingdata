@@ -113,8 +113,13 @@ const state = {
   appState: null,
   appStateError: null,
   appView: "loading",
-  dashboard: null,
-  selectedDate: null,
+  planDashboard: null,
+  analysisDashboard: null,
+  planDate: null,
+  analysisDate: null,
+  actualSessionForPlanDate: null,
+  selectedPreviewSession: null,
+  forecastInputMode: "preview",
   rangeDays: APP_CONFIG.defaultRangeDays || 28,
   mode: "hybrid",
   activeView: "plan",
@@ -772,23 +777,23 @@ async function refreshAppState({ requestedView = requestedAppViewFromPath(), rep
   }
 }
 
-function dashboardUrl() {
+function dashboardUrlForDate(date = null) {
   const params = new URLSearchParams({
     days: String(state.rangeDays),
     mode: state.mode,
   });
-  if (state.selectedDate) {
-    params.set("date", state.selectedDate);
+  if (date) {
+    params.set("date", date);
   }
   return `/api/dashboard?${params.toString()}`;
 }
 
 function currentBestOptions() {
-  return state.dashboard?.decision?.bestOptions || [];
+  return state.planDashboard?.decision?.bestOptions || [];
 }
 
 function getStoredPlannedSession() {
-  return getPlannedSession(currentUserId(), state.dashboard?.date);
+  return getPlannedSession(currentUserId(), state.planDate || state.planDashboard?.date);
 }
 
 function validPlannedSessionType() {
@@ -800,7 +805,9 @@ function validPlannedSessionType() {
 }
 
 function setStoredPlannedSessionType(sessionType) {
-  setPlannedSession(currentUserId(), state.dashboard?.date, sessionType);
+  const planDate = state.planDate || state.planDashboard?.date;
+  setPlannedSession(currentUserId(), planDate, sessionType);
+  state.selectedPreviewSession = sessionType || null;
 }
 
 function syncStatusSummary(sync) {
@@ -843,26 +850,180 @@ function renderSyncUi(sync = state.syncStatus) {
   }
 }
 
-function renderDecisionPanels(payload) {
-  renderTrainingDecisionCard({ payload });
-  renderWhyRecommendationPanel(payload?.decision?.why || []);
-  renderAvoidTodayPanel(payload?.decision?.avoid || []);
+function safeNumeric(value) {
+  return Number.isFinite(Number(value)) ? Number(value) : null;
+}
 
+function primaryActivityForActivities(activities) {
+  return activities.slice().sort((left, right) => {
+    const leftLoad = safeNumeric(left?.training_load) || 0;
+    const rightLoad = safeNumeric(right?.training_load) || 0;
+    if (leftLoad !== rightLoad) {
+      return rightLoad - leftLoad;
+    }
+    const leftDuration = safeNumeric(left?.duration_min) || 0;
+    const rightDuration = safeNumeric(right?.duration_min) || 0;
+    return rightDuration - leftDuration;
+  })[0] || null;
+}
+
+function weightedAverage(activities, valueKey, weightKey) {
+  let weightedSum = 0;
+  let totalWeight = 0;
+
+  activities.forEach((activity) => {
+    const value = safeNumeric(activity?.[valueKey]);
+    const weight = safeNumeric(activity?.[weightKey]) || 0;
+    if (value === null || weight <= 0) {
+      return;
+    }
+    weightedSum += value * weight;
+    totalWeight += weight;
+  });
+
+  if (totalWeight <= 0) {
+    return null;
+  }
+  return weightedSum / totalWeight;
+}
+
+function labelFromKey(value) {
+  if (!value) {
+    return null;
+  }
+  return String(value)
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function sessionCategoryLabel(category) {
+  return {
+    recovery: "Recovery",
+    easy: "Easy",
+    moderate: "Moderate",
+    threshold: "Threshold",
+    vo2: "VO2",
+    heavy_strength: "Strength",
+    light_strength: "Light Strength",
+  }[category] || labelFromKey(category) || "Session";
+}
+
+function actualSessionTitle(activity, sessionType) {
+  if (activity?.name && String(activity.name).trim() && String(activity.name).trim().toLowerCase() !== "unknown") {
+    return String(activity.name).trim();
+  }
+  return labelFromKey(activity?.type_key) || sessionCategoryLabel(sessionType);
+}
+
+function resolveActualSessionForPlanDate(payload) {
+  const activities = payload?.today?.activities || payload?.detail?.activities || [];
+  if (!activities.length) {
+    return null;
+  }
+
+  const sessionType = payload?.today?.sessionType || payload?.detail?.sessionType || "easy";
+  const primaryActivity = primaryActivityForActivities(activities);
+  const totalDuration = activities.reduce((sum, activity) => sum + (safeNumeric(activity?.duration_min) || 0), 0);
+  const avgHr = weightedAverage(activities, "avg_hr", "duration_min") ?? safeNumeric(primaryActivity?.avg_hr);
+  const totalLoad = activities.reduce((sum, activity) => sum + (safeNumeric(activity?.training_load) || 0), 0);
+  const aerobicTe = activities.reduce((sum, activity) => sum + (safeNumeric(activity?.aerobic_te) || 0), 0);
+  const anaerobicTe = activities.reduce((sum, activity) => sum + (safeNumeric(activity?.anaerobic_te) || 0), 0);
+  const title = activities.length === 1
+    ? actualSessionTitle(primaryActivity, sessionType)
+    : `${activities.length} activities completed`;
+  const summary = [
+    sessionCategoryLabel(sessionType),
+    totalDuration > 0 ? `${formatNumber(totalDuration, 0)} min` : null,
+    avgHr !== null ? `Avg HR ${formatNumber(avgHr, 0)}` : null,
+  ].filter(Boolean).join(" · ");
+  const chips = [
+    totalLoad > 0 ? `Load ${formatNumber(totalLoad, 0)}` : null,
+    aerobicTe > 0 || anaerobicTe > 0 ? `TE ${formatNumber(aerobicTe, 1)} / ${formatNumber(anaerobicTe, 1)}` : null,
+  ].filter(Boolean);
+
+  return {
+    type: sessionType,
+    label: summary || title,
+    title,
+    summary,
+    chips,
+  };
+}
+
+function planForecastMeta(forecastInputMode) {
+  return forecastInputMode === "actual"
+    ? "Forecast uses the completed session."
+    : "Preview selection drives forecast and impact.";
+}
+
+function renderPlanSessionSection({ actualSession, options, selectedType }) {
+  const actualCard = el("planActualSessionCard");
+  const sessionGrid = el("decisionSessionGrid");
+  const actualMode = Boolean(actualSession);
+
+  el("planSessionLabel").textContent = actualMode ? "Completed today" : "Choose today's session";
+  el("planSessionTitle").textContent = actualMode ? "Completed Session" : "Recommended Sessions";
+  el("planSessionMeta").textContent = actualMode
+    ? "Tomorrow impact and next days outlook use the completed session."
+    : "Selection updates tomorrow impact and the next days outlook.";
+
+  if (actualMode) {
+    el("planActualSessionTitle").textContent = safeText(actualSession.title, "Completed session");
+    el("planActualSessionSummary").textContent = safeText(actualSession.summary, "Forecast uses the completed session.");
+    el("planActualSessionStats").innerHTML = actualSession.chips.length
+      ? actualSession.chips.map((chip) => `<span class="chip">${safeHtml(chip)}</span>`).join("")
+      : "";
+    actualCard.hidden = false;
+    sessionGrid.hidden = true;
+    sessionGrid.innerHTML = "";
+    return;
+  }
+
+  actualCard.hidden = true;
+  el("planActualSessionStats").innerHTML = "";
+  sessionGrid.hidden = false;
+  renderBestOptionsPanel(options, { selectedType });
+}
+
+function renderDecisionPanels(payload) {
+  const options = currentBestOptions();
   const selectedType = validPlannedSessionType();
   if (selectedType && selectedType !== getStoredPlannedSession()) {
     setStoredPlannedSessionType(selectedType);
   }
-  renderBestOptionsPanel(currentBestOptions(), { selectedType });
-  bindPlannedSessionButtons();
 
-  const selectedOption = currentBestOptions().find((option) => option.type === selectedType) || null;
+  state.selectedPreviewSession = selectedType;
+  state.actualSessionForPlanDate = resolveActualSessionForPlanDate(payload);
+  state.forecastInputMode = state.actualSessionForPlanDate ? "actual" : "preview";
+
+  renderTrainingDecisionCard({
+    payload,
+    targetDayLabel: payload?.date ? `Today: ${payload.date}` : "-",
+    targetMeta: planForecastMeta(state.forecastInputMode),
+  });
+  renderAvoidTodayPanel(payload?.decision?.avoid || []);
+  renderPlanSessionSection({
+    actualSession: state.actualSessionForPlanDate,
+    options,
+    selectedType,
+  });
+  if (state.forecastInputMode === "preview") {
+    bindPlannedSessionButtons();
+  }
+
+  const selectedOption = options.find((option) => option.type === selectedType) || null;
+  const forecastSession = state.forecastInputMode === "actual"
+    ? state.actualSessionForPlanDate
+    : selectedOption;
   const outlook = computeNextDaysOutlook({
     currentDecision: payload?.decision,
     currentMetrics: payload?.today,
     currentLoad: payload?.load,
     currentComparisons: payload?.comparisons,
     baseline: payload?.baseline,
-    selectedSession: selectedOption,
+    selectedSession: forecastSession,
     currentDate: payload?.today?.recommendationDay || payload?.date,
     mode: payload?.mode,
     days: 4,
@@ -871,9 +1032,10 @@ function renderDecisionPanels(payload) {
   state.currentForecast = outlook;
   renderTomorrowImpactPanel({
     impact: outlook?.tomorrowImpact,
-    plannedOptionLabel: selectedOption?.label || null,
+    plannedOptionLabel: forecastSession?.label || null,
+    forecastInputMode: state.forecastInputMode,
   });
-  renderNextDaysOutlookPanel(outlook);
+  renderNextDaysOutlookPanel(outlook, { forecastInputMode: state.forecastInputMode });
 }
 
 function renderSummary(payload) {
@@ -984,7 +1146,7 @@ function renderHistoryTable(rows, activeDate) {
 
   target.querySelectorAll(".history-row").forEach((row) => {
     row.addEventListener("click", () => {
-      state.selectedDate = row.dataset.day;
+      state.analysisDate = row.dataset.day;
       void loadDashboard({ skipAutoSync: true });
     });
   });
@@ -1040,42 +1202,43 @@ function renderPrompt(payload) {
   }
 }
 
-function renderDashboard() {
-  const payload = state.dashboard;
-  renderSyncUi(payload?.sync || state.syncStatus);
-
+function renderPlanSurface(payload) {
   if (!payload || !payload.history?.rows?.length) {
     state.currentForecast = null;
+    state.actualSessionForPlanDate = null;
+    state.selectedPreviewSession = null;
+    state.forecastInputMode = "preview";
+    renderPlanSessionSection({ actualSession: null, options: [], selectedType: null });
     renderTrainingDecisionCard({ payload: payload || {} });
-    renderWhyRecommendationPanel([]);
     renderAvoidTodayPanel([]);
-    renderBestOptionsPanel([]);
-    renderTomorrowImpactPanel({ impact: null, plannedOptionLabel: null });
-    renderNextDaysOutlookPanel(null);
-    renderBaselineComparisonCard([]);
-    renderReadinessTrendCard([], null);
-    renderLoadTrendCard([], null);
-    renderHeatmap([], null);
-    renderHistoryTable([], null);
-    renderActivities({});
-    renderModeUnits({});
-    renderPrompt({});
-    renderSummary(payload || {});
-    renderDebug(payload || {}, state.currentForecast);
+    renderTomorrowImpactPanel({ impact: null, plannedOptionLabel: null, forecastInputMode: "preview" });
+    renderNextDaysOutlookPanel(null, { forecastInputMode: "preview" });
     return;
   }
 
   renderDecisionPanels(payload);
-  renderBaselineComparisonCard(payload.baselineBars || []);
-  renderReadinessTrendCard(payload.trends?.readinessSeries || [], payload.date);
-  renderLoadTrendCard(payload.trends?.loadSeries || [], payload.date);
-  renderHeatmap(payload.history.rows || [], payload.date);
-  renderHistoryTable(payload.history.rows || [], payload.date);
-  renderActivities(payload);
-  renderModeUnits(payload);
-  renderPrompt(payload);
-  renderSummary(payload);
-  renderDebug(payload, state.currentForecast);
+}
+
+function renderAnalysisSurface(payload) {
+  renderWhyRecommendationPanel(payload?.decision?.why || []);
+  renderBaselineComparisonCard(payload?.baselineBars || []);
+  renderReadinessTrendCard(payload?.trends?.readinessSeries || [], payload?.date || null);
+  renderLoadTrendCard(payload?.trends?.loadSeries || [], payload?.date || null);
+  renderHeatmap(payload?.history?.rows || [], payload?.date || null);
+  renderHistoryTable(payload?.history?.rows || [], payload?.date || null);
+  renderActivities(payload || {});
+  renderModeUnits(payload || {});
+  renderPrompt(payload || {});
+  renderSummary(payload || {});
+}
+
+function renderDashboard() {
+  const planPayload = state.planDashboard;
+  const analysisPayload = state.analysisDashboard || state.planDashboard;
+  renderSyncUi(planPayload?.sync || state.syncStatus);
+  renderPlanSurface(planPayload);
+  renderAnalysisSurface(analysisPayload);
+  renderDebug(planPayload || analysisPayload || {}, state.currentForecast);
 }
 
 async function refreshSyncStatus({ reloadDashboardOnTerminal = false } = {}) {
@@ -1171,7 +1334,7 @@ function maybeAutoSync() {
   if (state.appView !== "dashboard") {
     return;
   }
-  const sync = state.dashboard?.sync;
+  const sync = state.planDashboard?.sync;
   if (!sync?.autoSyncEnabled || !sync?.autoSyncRecommended) {
     return;
   }
@@ -1199,21 +1362,33 @@ async function loadDashboard({ skipAutoSync = false } = {}) {
   }
 
   try {
-    const payload = await apiGet(dashboardUrl());
-    state.dashboard = payload;
-    state.selectedDate = payload?.date || state.selectedDate;
-    state.syncStatus = payload?.sync || null;
+    const planPayload = await apiGet(dashboardUrlForDate(state.planDate));
+    const resolvedPlanDate = planPayload?.date || state.planDate;
+    const requestedAnalysisDate = state.analysisDate;
+    let analysisPayload = planPayload;
+    let resolvedAnalysisDate = resolvedPlanDate;
+
+    if (requestedAnalysisDate && requestedAnalysisDate !== resolvedPlanDate) {
+      analysisPayload = await apiGet(dashboardUrlForDate(requestedAnalysisDate));
+      resolvedAnalysisDate = analysisPayload?.date || requestedAnalysisDate;
+    }
+
+    state.planDashboard = planPayload;
+    state.analysisDashboard = analysisPayload;
+    state.planDate = resolvedPlanDate || null;
+    state.analysisDate = resolvedAnalysisDate || resolvedPlanDate || null;
+    state.syncStatus = planPayload?.sync || null;
     renderDashboard();
     renderSyncStatusPanel(state.syncStatus || {}, "settingsSyncStatusPanel");
 
-    if (payload?.sync?.syncState === "blocked") {
+    if (planPayload?.sync?.syncState === "blocked") {
       await refreshAppState({ requestedView: "settings", replaceHistory: true, loadDashboardIfNeeded: false });
       return;
     }
 
-    setGarminStatus(syncStatusSummary(payload.sync));
+    setGarminStatus(syncStatusSummary(planPayload.sync));
 
-    if (isSyncActive(payload?.sync?.syncState)) {
+    if (isSyncActive(planPayload?.sync?.syncState)) {
       startSyncPolling();
     } else {
       stopSyncPolling();
@@ -1235,8 +1410,14 @@ function setLoggedOutState({ authMessage = "Not signed in", garminMessage = "Sig
   state.appState = null;
   state.appStateError = null;
   state.appView = "auth";
-  state.dashboard = null;
-  state.selectedDate = null;
+  state.planDashboard = null;
+  state.analysisDashboard = null;
+  state.planDate = null;
+  state.analysisDate = null;
+  state.actualSessionForPlanDate = null;
+  state.selectedPreviewSession = null;
+  state.forecastInputMode = "preview";
+  state.currentForecast = null;
   state.syncStatus = null;
   state.autoSyncKey = null;
   stopSyncPolling();
@@ -1405,8 +1586,8 @@ function bindPlannedSessionButtons() {
     button.addEventListener("click", () => {
       const sessionType = button.dataset.sessionType;
       setStoredPlannedSessionType(sessionType);
-      renderDecisionPanels(state.dashboard || {});
-      renderDebug(state.dashboard || {}, state.currentForecast);
+      renderPlanSurface(state.planDashboard || {});
+      renderDebug(state.planDashboard || state.analysisDashboard || {}, state.currentForecast);
     });
   });
 }

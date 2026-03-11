@@ -1,7 +1,7 @@
 import { el, safeHtml, safeText } from "../../lib/formatters.js";
 import { setPanelTone } from "../layout/SectionCard.js";
 
-export function renderNextDaysOutlookPanel(outlook) {
+export function renderNextDaysOutlookPanel(outlook, { forecastInputMode = "preview" } = {}) {
   const title = el("nextDaysOutlookTitle");
   const body = el("nextDaysOutlookBody");
   const meta = el("nextDaysOutlookMeta");
@@ -27,7 +27,9 @@ export function renderNextDaysOutlookPanel(outlook) {
         : ""}
     </div>
   `).join("");
-  meta.textContent = "Updates when you preview a different session.";
+  meta.textContent = forecastInputMode === "actual"
+    ? "Forecast follows the completed session."
+    : "Updates when you preview a different session.";
   setPanelTone(panel, strongestTone(outlook.days));
 }
 

@@ -10,6 +10,24 @@
     </div>
   </div>
 
+  <section id="planSessionSection" class="plan-session-section">
+    <div class="panel-head-space compact-head">
+      <div>
+        <p id="planSessionLabel" class="eyebrow">Choose today&rsquo;s session</p>
+        <h3 id="planSessionTitle">Preview Session</h3>
+      </div>
+      <p id="planSessionMeta" class="muted-copy">Select a session to preview tomorrow impact and the next days.</p>
+    </div>
+    <article id="planActualSessionCard" class="plan-actual-session-card" hidden>
+      <div class="plan-actual-session-copy">
+        <strong id="planActualSessionTitle">-</strong>
+        <p id="planActualSessionSummary" class="muted-copy">-</p>
+      </div>
+      <div id="planActualSessionStats" class="activity-chips"></div>
+    </article>
+    <div id="decisionSessionGrid" class="decision-session-grid"></div>
+  </section>
+
   <div class="decision-layout plan-decision-layout">
     <article id="decisionHero" class="decision-hero" data-tone="neutral">
       <div class="decision-head">
@@ -19,18 +37,6 @@
         <p id="decisionConclusion" class="decision-conclusion muted-copy">Recommendation updates after the next sync.</p>
       </div>
       <div class="decision-support-band">
-        <div class="decision-score-stack">
-          <article id="decisionRecoveryCard" class="score-chip" data-tone="neutral">
-            <span>Recovery Status</span>
-            <strong id="decisionRecoveryStatus">-</strong>
-            <small id="decisionRecoveryMeta">Score -</small>
-          </article>
-          <article id="decisionReadinessCard" class="score-chip" data-tone="neutral">
-            <span>Readiness</span>
-            <strong id="decisionReadinessStatus">-</strong>
-            <small id="decisionReadinessMeta">-</small>
-          </article>
-        </div>
         <div id="decisionStatusChips" class="decision-status-chips"></div>
       </div>
     </article>
@@ -73,15 +79,4 @@
       </article>
     </div>
   </div>
-
-  <section class="plan-options-section">
-    <div class="panel-head-space compact-head">
-      <div>
-        <p class="eyebrow">Best Options Today</p>
-        <h3>Recommended Sessions</h3>
-      </div>
-      <p class="muted-copy">Select a session to preview tomorrow and the next days.</p>
-    </div>
-    <div id="decisionSessionGrid" class="decision-session-grid"></div>
-  </section>
 </section>

@@ -851,10 +851,32 @@ th {
   align-content: start;
 }
 
-.plan-options-section {
+.plan-session-section {
   margin-top: 16px;
   padding-top: 16px;
   border-top: 1px solid rgba(173, 212, 202, 0.08);
+}
+
+.plan-actual-session-card {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 16px 18px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line);
+  background:
+    linear-gradient(155deg, rgba(86, 208, 179, 0.08), rgba(255, 184, 92, 0.06)),
+    rgba(4, 15, 20, 0.74);
+}
+
+.plan-actual-session-copy {
+  display: grid;
+  gap: 6px;
+}
+
+.plan-actual-session-copy strong {
+  font-size: 1rem;
+  line-height: 1.2;
 }
 
 .analysis-divider {

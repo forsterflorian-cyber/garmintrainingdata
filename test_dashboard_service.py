@@ -84,6 +84,9 @@ class DashboardServiceHardeningTests(unittest.TestCase):
         self.assertEqual(len(payload["detail"]["activities"]), 1)
         self.assertEqual(payload["load"]["ratio7to28"], 1.02)
         self.assertEqual(payload["decision"]["primaryRecommendation"], "Moderate only")
+        self.assertEqual(payload["today"]["sessionType"], "threshold")
+        self.assertEqual(payload["detail"]["sessionType"], "threshold")
+        self.assertEqual(payload["history"]["rows"][0]["sessionType"], "threshold")
 
     def test_build_prompt_from_payload_tolerates_partial_activity_payloads(self):
         prompt = build_prompt_from_payload(
