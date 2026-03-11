@@ -36,8 +36,11 @@ def build_comparisons(today: Dict[str, Optional[float]], baseline: Dict[str, Opt
     return {
         "hrvDeltaPct": _delta_pct(today.get("hrv"), baseline.get("hrv")),
         "restingHrDeltaPct": _delta_pct(today.get("restingHr"), baseline.get("restingHr")),
+        "restingHrDeltaBpm": _delta_abs(today.get("restingHr"), baseline.get("restingHr")),
         "sleepDeltaPct": _delta_pct(today.get("sleepHours"), baseline.get("sleepHours")),
+        "sleepDeltaHours": _delta_abs(today.get("sleepHours"), baseline.get("sleepHours")),
         "respirationDeltaPct": _delta_pct(today.get("respiration"), baseline.get("respiration")),
+        "respirationDeltaBrpm": _delta_abs(today.get("respiration"), baseline.get("respiration")),
     }
 
 
@@ -50,7 +53,7 @@ def build_metric_delta_bars(
 
     for key, label, directionality in METRIC_CONFIG:
         delta_key = _comparison_key(key)
-        normalized = normalized_deviation(today.get(key), baseline.get(key), directionality)
+        normalized = normalized_metric_deviation(key, today.get(key), baseline.get(key))
         tone = metric_tone(normalized)
         progress = 0 if normalized is None else round(((normalized + 1.0) / 2.0) * 100)
         bars.append(
@@ -68,6 +71,44 @@ def build_metric_delta_bars(
         )
 
     return bars
+
+
+def normalized_metric_deviation(
+    metric_key: str,
+    today_value: Optional[float],
+    baseline_value: Optional[float],
+) -> Optional[float]:
+    today_numeric = _safe_number(today_value)
+    baseline_numeric = _safe_number(baseline_value)
+    if today_numeric is None or baseline_numeric in (None, 0):
+        return None
+
+    if metric_key == "hrv":
+        relative_delta = (today_numeric - baseline_numeric) / baseline_numeric
+        if relative_delta >= 0:
+            return round(min(0.25, (relative_delta / 0.20) * 0.25), 4)
+        return round(max(-1.0, relative_delta / 0.18), 4)
+
+    if metric_key == "restingHr":
+        delta_bpm = today_numeric - baseline_numeric
+        if delta_bpm <= 0:
+            return round(min(0.15, (abs(delta_bpm) / 4.0) * 0.15), 4)
+        return round(-min(1.0, delta_bpm / 5.0), 4)
+
+    if metric_key == "sleepHours":
+        delta_hours = today_numeric - baseline_numeric
+        if delta_hours >= 0:
+            return round(min(0.10, (delta_hours / 1.5) * 0.10), 4)
+        return round(-min(1.0, abs(delta_hours) / 2.0), 4)
+
+    if metric_key == "respiration":
+        delta_brpm = today_numeric - baseline_numeric
+        if delta_brpm <= 0:
+            return round(min(0.08, (abs(delta_brpm) / 2.0) * 0.08), 4)
+        return round(-min(1.0, delta_brpm / 2.5), 4)
+
+    _, _, directionality = next((entry for entry in METRIC_CONFIG if entry[0] == metric_key), (None, None, "higher"))
+    return normalized_deviation(today_numeric, baseline_numeric, directionality)
 
 
 def normalized_deviation(
@@ -90,9 +131,9 @@ def normalized_deviation(
 def metric_tone(normalized: Optional[float]) -> str:
     if normalized is None:
         return "neutral"
-    if normalized >= 0.10:
+    if normalized >= 0.05:
         return "positive"
-    if normalized >= -0.10:
+    if normalized > -0.20:
         return "warning"
     return "critical"
 
@@ -110,6 +151,12 @@ def _delta_pct(value: Optional[float], baseline: Optional[float]) -> Optional[fl
     if value is None or baseline in (None, 0):
         return None
     return round(((float(value) - float(baseline)) / float(baseline)) * 100.0, 1)
+
+
+def _delta_abs(value: Optional[float], baseline: Optional[float]) -> Optional[float]:
+    if value is None or baseline is None:
+        return None
+    return round(float(value) - float(baseline), 1)
 
 
 def _safe_number(value: Any) -> Optional[float]:

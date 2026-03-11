@@ -9,6 +9,7 @@ from flask import Flask, jsonify, render_template, request
 from auth_supabase import require_user
 from backend.routes.dashboard import create_dashboard_blueprint
 from backend.routes.settings import create_settings_blueprint
+from backend.services.garmin_connection_service import GarminConnectionService
 from backend.routes.sync import create_sync_blueprint
 from backend.services.account_service import AccountService
 from backend.services.app_flow_service import build_authenticated_app_state
@@ -34,6 +35,11 @@ from training_config import TRAINING_CONFIG
 
 supabase = get_supabase_admin_client()
 store = GarminSessionStore(supabase)
+garmin_connection_service = GarminConnectionService(
+    session_store=store,
+    load_client_fn=load_client,
+    export_session_fn=export_client_session,
+)
 sync_status_service = SyncStatusService(supabase)
 sync_runner = SyncRunner(supabase_client=supabase, session_store=store)
 account_service = AccountService(supabase)
@@ -258,17 +264,11 @@ def connect_garmin():
         )
 
     try:
-        client = load_client(email=email, password=password)
-        session_payload = export_client_session(client)
-        if not session_payload:
-            raise ServiceError(
-                "Garmin session could not be serialized.",
-                status_code=500,
-                category=ErrorCategory.API,
-                event="garmin.connect_session_missing",
-            )
-
-        store.save_connected_account(request.user_id, email, password, session_payload)
+        garmin_connection_service.connect_account(
+            request.user_id,
+            email=email,
+            password=password,
+        )
         status = sync_status_service.ensure_status(request.user_id)
         _set_sync_status_fields(
             request.user_id,

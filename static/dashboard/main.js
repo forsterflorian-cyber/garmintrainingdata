@@ -16,6 +16,7 @@ import { renderSyncStatusPanel } from "./components/sync/SyncStatusPanel.js";
 import { clearPlannedSessionsForUser, getPlannedSession, setPlannedSession } from "./lib/forecastUtils.js";
 import { el, formatDateTime, formatNumber, formatRelativeHours, safeHtml, safeText } from "./lib/formatters.js";
 import { computeNextDaysOutlook } from "./lib/outlookForecast.js";
+import { buildForecastContextCopy, compareCompletedSessionToDecision } from "./lib/planDecisionUtils.js";
 
 const APP_CONFIG = window.__APP_CONFIG__ || {};
 const SURFACE_VIEWS = ["plan", "analysis", "sync", "debug"];
@@ -917,7 +918,7 @@ function actualSessionTitle(activity, sessionType) {
   return labelFromKey(activity?.type_key) || sessionCategoryLabel(sessionType);
 }
 
-function resolveActualSessionForPlanDate(payload) {
+function legacyResolveActualSessionForPlanDate(payload) {
   const activities = payload?.today?.activities || payload?.detail?.activities || [];
   if (!activities.length) {
     return null;
@@ -952,21 +953,58 @@ function resolveActualSessionForPlanDate(payload) {
   };
 }
 
-function planForecastMeta(forecastInputMode) {
-  return forecastInputMode === "actual"
-    ? "Forecast uses the completed session."
-    : "Preview selection drives forecast and impact.";
+function resolveActualSessionForPlanDate(payload) {
+  const activities = payload?.today?.activities || payload?.detail?.activities || [];
+  if (!activities.length) {
+    return null;
+  }
+
+  const sessionType = payload?.today?.sessionType || payload?.detail?.sessionType || "easy";
+  const primaryActivity = primaryActivityForActivities(activities);
+  const totalDuration = activities.reduce((sum, activity) => sum + (safeNumeric(activity?.duration_min) || 0), 0);
+  const avgHr = weightedAverage(activities, "avg_hr", "duration_min") ?? safeNumeric(primaryActivity?.avg_hr);
+  const totalLoad = activities.reduce((sum, activity) => sum + (safeNumeric(activity?.training_load) || 0), 0);
+  const aerobicTe = activities.reduce((sum, activity) => sum + (safeNumeric(activity?.aerobic_te) || 0), 0);
+  const anaerobicTe = activities.reduce((sum, activity) => sum + (safeNumeric(activity?.anaerobic_te) || 0), 0);
+  const title = activities.length === 1
+    ? actualSessionTitle(primaryActivity, sessionType)
+    : `${activities.length} activities completed`;
+  const summary = [
+    sessionCategoryLabel(sessionType),
+    totalDuration > 0 ? `${formatNumber(totalDuration, 0)} min` : null,
+    avgHr !== null ? `Avg HR ${formatNumber(avgHr, 0)}` : null,
+  ].filter(Boolean).join(" / ");
+  const chips = [
+    totalLoad > 0 ? `Load ${formatNumber(totalLoad, 0)}` : null,
+    aerobicTe > 0 || anaerobicTe > 0 ? `TE ${formatNumber(aerobicTe, 1)} / ${formatNumber(anaerobicTe, 1)}` : null,
+  ].filter(Boolean);
+
+  return {
+    type: sessionType,
+    label: summary || title,
+    title,
+    summary,
+    chips,
+    durationMinutes: totalDuration > 0 ? totalDuration : null,
+  };
 }
 
-function renderPlanSessionSection({ actualSession, options, selectedType }) {
+function planForecastMeta(forecastInputMode) {
+  return forecastInputMode === "actual"
+    ? "Completed session drives tomorrow impact and outlook."
+    : "Preview selection drives tomorrow impact and outlook.";
+}
+
+function renderPlanSessionSection({ actualSession, options, selectedType, sessionComparison = null }) {
   const actualCard = el("planActualSessionCard");
   const sessionGrid = el("decisionSessionGrid");
+  const comparison = el("planSessionComparison");
   const actualMode = Boolean(actualSession);
 
-  el("planSessionLabel").textContent = actualMode ? "Completed today" : "Choose today's session";
-  el("planSessionTitle").textContent = actualMode ? "Completed Session" : "Recommended Sessions";
+  el("planSessionLabel").textContent = actualMode ? "Today" : "Choose today's session";
+  el("planSessionTitle").textContent = actualMode ? "Completed session" : "Recommended sessions";
   el("planSessionMeta").textContent = actualMode
-    ? "Tomorrow impact and next days outlook use the completed session."
+    ? "Forecast follows the completed session."
     : "Selection updates tomorrow impact and the next days outlook.";
 
   if (actualMode) {
@@ -976,6 +1014,9 @@ function renderPlanSessionSection({ actualSession, options, selectedType }) {
       ? actualSession.chips.map((chip) => `<span class="chip">${safeHtml(chip)}</span>`).join("")
       : "";
     actualCard.hidden = false;
+    comparison.textContent = safeText(sessionComparison?.label);
+    comparison.dataset.tone = sessionComparison?.tone || "neutral";
+    comparison.hidden = !sessionComparison?.label;
     sessionGrid.hidden = true;
     sessionGrid.innerHTML = "";
     return;
@@ -983,6 +1024,9 @@ function renderPlanSessionSection({ actualSession, options, selectedType }) {
 
   actualCard.hidden = true;
   el("planActualSessionStats").innerHTML = "";
+  comparison.hidden = true;
+  comparison.textContent = "";
+  comparison.dataset.tone = "neutral";
   sessionGrid.hidden = false;
   renderBestOptionsPanel(options, { selectedType });
 }
@@ -1008,6 +1052,9 @@ function renderDecisionPanels(payload) {
     actualSession: state.actualSessionForPlanDate,
     options,
     selectedType,
+    sessionComparison: state.actualSessionForPlanDate
+      ? compareCompletedSessionToDecision(state.actualSessionForPlanDate.type, payload?.decision)
+      : null,
   });
   if (state.forecastInputMode === "preview") {
     bindPlannedSessionButtons();
@@ -1017,6 +1064,9 @@ function renderDecisionPanels(payload) {
   const forecastSession = state.forecastInputMode === "actual"
     ? state.actualSessionForPlanDate
     : selectedOption;
+  const forecastContext = buildForecastContextCopy(forecastSession, {
+    forecastInputMode: state.forecastInputMode,
+  });
   const outlook = computeNextDaysOutlook({
     currentDecision: payload?.decision,
     currentMetrics: payload?.today,
@@ -1034,8 +1084,14 @@ function renderDecisionPanels(payload) {
     impact: outlook?.tomorrowImpact,
     plannedOptionLabel: forecastSession?.label || null,
     forecastInputMode: state.forecastInputMode,
+    sourceContext: forecastContext,
   });
-  renderNextDaysOutlookPanel(outlook, { forecastInputMode: state.forecastInputMode });
+  renderNextDaysOutlookPanel(outlook, {
+    forecastInputMode: state.forecastInputMode,
+    sourceContext: state.forecastInputMode === "actual"
+      ? "Forecast follows today's completed session."
+      : "Preview follows the selected session.",
+  });
 }
 
 function renderSummary(payload) {

@@ -27,15 +27,15 @@ function resolveChipCopy(chip = {}) {
 
   if (label === "Recovery") {
     return {
-      label: "Recovery Status",
+      label: "Recovery",
       tone,
-      ...(recoveryCopy(value) || { value, detail: "Recovery status unavailable" }),
+      ...(recoveryCopy(value) || { value, detail: "Recovery signal unavailable" }),
     };
   }
 
   if (label === "Load") {
     return {
-      label: "Load Status",
+      label: "Load",
       tone,
       ...(loadCopy(value) || { value, detail: "Load guidance unavailable" }),
     };
@@ -43,7 +43,7 @@ function resolveChipCopy(chip = {}) {
 
   if (label === "Intensity") {
     return {
-      label: "Intensity Limit",
+      label: "Intensity limit",
       tone,
       ...(intensityCopy(value) || { value, detail: "Intensity guidance unavailable" }),
     };
@@ -67,35 +67,35 @@ function resolveChipCopy(chip = {}) {
 
 function recoveryCopy(value) {
   return {
-    Good: { value: "Ready", detail: "Quality work supported" },
-    Stable: { value: "Steady", detail: "Controlled quality work fits" },
-    Borderline: { value: "Borderline", detail: "Moderate training recommended" },
-    Poor: { value: "Low", detail: "Recovery day recommended" },
+    Good: { value: "Supportive", detail: "Quality work is supported" },
+    Stable: { value: "Steady", detail: "Keep quality controlled" },
+    Borderline: { value: "Borderline", detail: "Bias toward moderate work" },
+    Poor: { value: "Low", detail: "Keep the day restorative" },
   }[value] || null;
 }
 
 function loadCopy(value) {
   return {
-    High: { value: "Open", detail: "Load can support a harder day" },
-    Normal: { value: "Balanced", detail: "Current load is under control" },
+    High: { value: "Open", detail: "Load can absorb harder work" },
+    Normal: { value: "Controlled", detail: "Current load is manageable" },
     Reduced: { value: "Reduced", detail: "Keep load controlled" },
-    Low: { value: "Restricted", detail: "Avoid adding extra load today" },
+    Low: { value: "Restricted", detail: "Avoid adding extra load" },
   }[value] || null;
 }
 
 function intensityCopy(value) {
   return {
-    VO2: { value: "VO2 Allowed", detail: "High intensity is supported" },
-    Threshold: { value: "Threshold Allowed", detail: "Controlled quality work is okay" },
-    Moderate: { value: "Moderate Only", detail: "No hard intervals" },
-    none: { value: "Recovery Only", detail: "Do not chase intensity" },
+    VO2: { value: "VO2", detail: "High intensity is supported" },
+    Threshold: { value: "Threshold", detail: "Quality fits below VO2" },
+    Moderate: { value: "Moderate only", detail: "No hard intervals" },
+    none: { value: "Recovery only", detail: "Keep intensity out" },
   }[value] || null;
 }
 
 function confidenceCopy(value) {
   return {
-    High: { value: "High", detail: "Decision confidence high" },
-    Medium: { value: "Moderate", detail: "Decision confidence moderate" },
+    High: { value: "High", detail: "Signals are aligned" },
+    Medium: { value: "Medium", detail: "Some signals are mixed" },
     Low: { value: "Low", detail: "Use extra judgment today" },
   }[value] || null;
 }

@@ -74,7 +74,7 @@ export function computeNextDaysOutlook({
       recoveryStatus: decision.recoveryStatus,
       recoveryScore: decision.recoveryScore,
       tone: recommendation.tone,
-      statusChip: decision.recoveryStatus,
+      statusChip: outlookCapacityLabel(decision),
       defaultSessionCategory: defaultSession?.category || null,
       qualityBlocks: intensityOverride?.blocks || [],
       decision,
@@ -280,7 +280,7 @@ function buildTomorrowImpact(day) {
   }
 
   return {
-    headline: tomorrowHeadlineForRecommendation(day.recommendation),
+    headline: tomorrowHeadlineForRecommendation(day.intensityPermission, day.recommendation),
     text: day.recommendation,
     predictedScore: day.recoveryScore,
     tone: day.tone,
@@ -289,49 +289,65 @@ function buildTomorrowImpact(day) {
 
 function outlookRecommendationForDecision(decision, defaultCategory) {
   if (decision.primaryRecommendation === "Recovery day" || decision.primaryRecommendation === "Avoid intensity") {
-    return { label: "Recovery Day Likely", tone: "critical", intensityPermission: "none" };
+    return { label: "Recovery likely", tone: "critical", intensityPermission: "none" };
   }
   if (decision.primaryRecommendation === "VO2max OK") {
-    return { label: "VO2 Session Possible", tone: "positive", intensityPermission: "vo2" };
+    return { label: "High intensity may return", tone: "positive", intensityPermission: "vo2" };
   }
   if (decision.primaryRecommendation === "Threshold OK") {
-    return { label: "Threshold Session Possible", tone: "warning", intensityPermission: "threshold" };
+    return { label: "Threshold may fit", tone: "warning", intensityPermission: "threshold" };
   }
   if (decision.primaryRecommendation === "Strength OK" || defaultCategory === "heavy_strength") {
-    return { label: "Strength Session Likely", tone: "warning", intensityPermission: "moderate" };
+    return { label: "Strength work may fit", tone: "warning", intensityPermission: "moderate" };
   }
   if (defaultCategory === "light_strength") {
-    return { label: "Light Strength Likely", tone: "warning", intensityPermission: "moderate" };
+    return { label: "Light strength likely", tone: "warning", intensityPermission: "moderate" };
   }
   if (decision.primaryRecommendation === "Moderate only") {
-    return { label: "Moderate Training Likely", tone: "warning", intensityPermission: "moderate" };
+    return { label: "Moderate work fits best", tone: "warning", intensityPermission: "moderate" };
   }
   if (decision.primaryRecommendation === "Easy Aerobic") {
-    return { label: "Easy Day Likely", tone: "warning", intensityPermission: "none" };
+    return { label: "Easy day likely", tone: "warning", intensityPermission: "none" };
   }
   if (decision.intensityPermission === "threshold") {
-    return { label: "Quality Session Possible", tone: "warning", intensityPermission: "threshold" };
+    return { label: "Quality work may fit", tone: "warning", intensityPermission: "threshold" };
   }
   if (decision.intensityPermission === "vo2") {
-    return { label: "VO2 Session Possible", tone: "positive", intensityPermission: "vo2" };
+    return { label: "High intensity may return", tone: "positive", intensityPermission: "vo2" };
   }
   if (decision.intensityPermission === "moderate") {
-    return { label: "Moderate Training Likely", tone: "warning", intensityPermission: "moderate" };
+    return { label: "Moderate work fits best", tone: "warning", intensityPermission: "moderate" };
   }
-  return { label: "Easy Day Likely", tone: "warning", intensityPermission: "none" };
+  return { label: "Easy day likely", tone: "warning", intensityPermission: "none" };
 }
 
-function tomorrowHeadlineForRecommendation(recommendation) {
-  if (recommendation.includes("VO2")) {
+function tomorrowHeadlineForRecommendation(intensityPermission, recommendation) {
+  if (intensityPermission === "vo2" || recommendation.includes("VO2")) {
     return "VO2 Tomorrow";
   }
-  if (recommendation.includes("Threshold") || recommendation.includes("Quality")) {
+  if (intensityPermission === "threshold" || recommendation.includes("Threshold") || recommendation.includes("Quality")) {
     return "Quality Tomorrow";
   }
-  if (recommendation.includes("Moderate") || recommendation.includes("Strength")) {
+  if (intensityPermission === "moderate" || recommendation.includes("Moderate") || recommendation.includes("Strength")) {
     return "Moderate Tomorrow";
   }
   return "Easy Tomorrow";
+}
+
+function outlookCapacityLabel(decision) {
+  if (!decision) {
+    return "Stable";
+  }
+  if (decision.primaryRecommendation === "Recovery day" || decision.primaryRecommendation === "Avoid intensity") {
+    return decision.loadTolerance === "Low" ? "Low capacity" : "Recovery likely";
+  }
+  if (decision.recoveryStatus === "Poor") {
+    return decision.loadTolerance === "Low" ? "Low capacity" : "Fatigued";
+  }
+  if (decision.recoveryStatus === "Borderline") {
+    return decision.loadTolerance === "Low" ? "Low capacity" : "Borderline";
+  }
+  return "Stable";
 }
 
 function advanceSimulationState(state, sessionProfile) {

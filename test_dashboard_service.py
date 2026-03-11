@@ -84,6 +84,7 @@ class DashboardServiceHardeningTests(unittest.TestCase):
         self.assertEqual(len(payload["detail"]["activities"]), 1)
         self.assertEqual(payload["load"]["ratio7to28"], 1.02)
         self.assertEqual(payload["decision"]["primaryRecommendation"], "Moderate only")
+        self.assertTrue(all("%" not in line for line in payload["decision"]["why"]))
         self.assertEqual(payload["today"]["sessionType"], "threshold")
         self.assertEqual(payload["detail"]["sessionType"], "threshold")
         self.assertEqual(payload["history"]["rows"][0]["sessionType"], "threshold")

@@ -1,7 +1,7 @@
 import { el, safeHtml, safeText } from "../../lib/formatters.js";
 import { setPanelTone } from "../layout/SectionCard.js";
 
-export function renderNextDaysOutlookPanel(outlook, { forecastInputMode = "preview" } = {}) {
+export function renderNextDaysOutlookPanel(outlook, { forecastInputMode = "preview", sourceContext = null } = {}) {
   const title = el("nextDaysOutlookTitle");
   const body = el("nextDaysOutlookBody");
   const meta = el("nextDaysOutlookMeta");
@@ -23,25 +23,28 @@ export function renderNextDaysOutlookPanel(outlook, { forecastInputMode = "previ
         <strong>${safeHtml(day.recommendation)}</strong>
       </div>
       ${day.statusChip || day.recoveryStatus
-        ? `<span class="outlook-chip" data-tone="${safeHtml(day.tone || "neutral")}">${safeHtml(day.statusChip || day.recoveryStatus || "")}</span>`
+        ? `<span class="outlook-chip" data-tone="${safeHtml(day.tone || "neutral")}">${safeHtml(day.statusChip || defaultStatusCopy(day))}</span>`
         : ""}
     </div>
   `).join("");
-  meta.textContent = forecastInputMode === "actual"
-    ? "Forecast follows the completed session."
-    : "Updates when you preview a different session.";
-  setPanelTone(panel, strongestTone(outlook.days));
+  meta.textContent = safeText(
+    sourceContext,
+    forecastInputMode === "actual"
+      ? "Forecast follows today's completed session."
+      : "Preview updates the next few days.",
+  );
+  setPanelTone(panel, "neutral");
 }
 
-function strongestTone(days) {
-  if (days.some((day) => day.tone === "critical")) {
-    return "critical";
+function defaultStatusCopy(day = {}) {
+  if (day.recoveryStatus === "Poor") {
+    return "Fatigued";
   }
-  if (days.some((day) => day.tone === "warning")) {
-    return "warning";
+  if (day.recoveryStatus === "Borderline") {
+    return "Borderline";
   }
-  if (days.some((day) => day.tone === "positive")) {
-    return "positive";
+  if (day.recoveryStatus === "Stable" || day.recoveryStatus === "Good") {
+    return "Stable";
   }
-  return "neutral";
+  return "Low capacity";
 }

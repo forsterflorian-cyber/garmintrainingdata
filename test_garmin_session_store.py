@@ -9,6 +9,7 @@ fake_crypto_utils.decrypt = lambda value: value.removeprefix("enc:")
 sys.modules.setdefault("crypto_utils", fake_crypto_utils)
 
 from garmin_session_store import GarminSessionStore, TABLE_NAME
+from observability import ServiceError
 
 
 class FakeResponse:
@@ -22,6 +23,14 @@ class MissingSessionColumnError(Exception):
         self.message = f"column {TABLE_NAME}.{column} does not exist"
         self.details = None
         super().__init__({"message": self.message, "code": self.code, "hint": None, "details": None})
+
+
+class UniqueOwnershipConstraintError(Exception):
+    def __init__(self, column: str):
+        self.code = "23505"
+        self.message = f"duplicate key value violates unique constraint user_garmin_accounts_{column}_unique"
+        self.details = f"Key ({column}) already exists."
+        super().__init__({"message": self.message, "code": self.code, "details": self.details})
 
 
 class FakeTableQuery:
@@ -88,16 +97,21 @@ class FakeSupabase:
             if self.missing_session_columns and "garmin_session_enc" in (query.select_columns or ""):
                 raise MissingSessionColumnError()
 
-            row = self.rows.get(query.filters.get("user_id"))
-            if row is None:
-                return FakeResponse([])
-            return FakeResponse([self._project_row(row, query.select_columns)])
+            matches = [
+                dict(row)
+                for row in self.rows.values()
+                if all(row.get(field) == value for field, value in query.filters.items())
+            ]
+            if query.limit_value is not None:
+                matches = matches[: query.limit_value]
+            return FakeResponse([self._project_row(row, query.select_columns) for row in matches])
 
         if query.operation == "upsert":
             if self.missing_session_columns and any(key.startswith("garmin_session_") for key in query.payload):
                 raise MissingSessionColumnError()
 
             user_id = query.payload["user_id"]
+            self._ensure_unique_ownership_keys(user_id, query.payload)
             current = self.rows.get(user_id, {"user_id": user_id})
             current.update(query.payload)
             self.rows[user_id] = current
@@ -119,6 +133,7 @@ class FakeSupabase:
                 current_version = current.get("garmin_session_version", 0)
                 if current_version != query.filters["garmin_session_version"]:
                     return FakeResponse([])
+            self._ensure_unique_ownership_keys(user_id, query.payload)
             current.update(query.payload)
             self.rows[user_id] = current
             data = [self._project_row(current, query.select_columns)] if query.select_columns else []
@@ -131,6 +146,17 @@ class FakeSupabase:
         if not columns:
             return dict(row)
         return {column: row.get(column) for column in columns.split(",")}
+
+    def _ensure_unique_ownership_keys(self, user_id: str, payload: dict):
+        for column in ("garmin_account_key", "garmin_login_key"):
+            value = payload.get(column)
+            if not value:
+                continue
+            for existing_user_id, row in self.rows.items():
+                if existing_user_id == user_id:
+                    continue
+                if row.get(column) == value:
+                    raise UniqueOwnershipConstraintError(column)
 
 
 class GarminSessionStoreCompatibilityTests(unittest.TestCase):
@@ -207,6 +233,61 @@ class GarminSessionStoreCompatibilityTests(unittest.TestCase):
         self.assertEqual(account.user_id, "user-1")
         self.assertIsNone(account.garmin_session_enc)
         self.assertEqual(account.garmin_session_version, 0)
+
+    def test_find_conflicting_account_detects_legacy_row_by_stored_login_identifier(self):
+        client = FakeSupabase(
+            rows={
+                "user-a": {
+                    "user_id": "user-a",
+                    "garmin_email_enc": "enc:garmin-x@example.com",
+                    "garmin_password_enc": "enc:secret",
+                    "sync_status": "connected",
+                }
+            }
+        )
+        store = GarminSessionStore(client)
+
+        conflict = store.find_conflicting_account(
+            user_id="user-b",
+            garmin_account_key="garmin_guid:guid-x",
+            garmin_login_key="garmin-x@example.com",
+        )
+
+        self.assertIsNotNone(conflict)
+        self.assertEqual("user-a", conflict.user_id)
+
+    def test_save_connected_account_maps_unique_ownership_violation_to_clear_409(self):
+        client = FakeSupabase(
+            rows={
+                "user-a": {
+                    "user_id": "user-a",
+                    "garmin_email_enc": "enc:garmin-x@example.com",
+                    "garmin_password_enc": "enc:secret",
+                    "garmin_account_key": "garmin_guid:guid-x",
+                    "garmin_login_key": "garmin-x@example.com",
+                    "garmin_session_version": 1,
+                }
+            }
+        )
+        store = GarminSessionStore(client)
+
+        with patch("garmin_session_store.encrypt", side_effect=lambda value: f"enc:{value}"):
+            with self.assertRaises(ServiceError) as context:
+                store.save_connected_account(
+                    "user-b",
+                    "garmin-x@example.com",
+                    "other-secret",
+                    "session-json",
+                    garmin_account_key="garmin_guid:guid-x",
+                    garmin_account_key_source="garmin_guid",
+                    garmin_login_key="garmin-x@example.com",
+                )
+
+        self.assertEqual(409, context.exception.status_code)
+        self.assertEqual(
+            "This Garmin account is already connected to another account.",
+            context.exception.public_message,
+        )
 
 
 if __name__ == "__main__":

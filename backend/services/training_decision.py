@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
+from backend.services.baseline_service import normalized_metric_deviation
 from backend.services.forecast_service import build_tomorrow_impacts
 from backend.services.session_catalog import get_session
 
@@ -46,6 +47,9 @@ def compute_training_decision(input_payload: Dict[str, Any]) -> Dict[str, Any]:
         strength=strength,
     )
     why = build_why_lines(
+        recovery=recovery,
+        load_tolerance=load_tolerance,
+        intensity=intensity,
         comparisons=comparisons,
         load=load,
         today=today,
@@ -99,14 +103,14 @@ def compute_recovery_layer(*, today: Dict[str, Any], baseline: Dict[str, Any]) -
     available_weight = 0.0
 
     recovery_inputs = (
-        ("hrv", 0.35, "higher"),
-        ("restingHr", 0.25, "lower"),
-        ("sleepHours", 0.20, "higher"),
-        ("respiration", 0.10, "lower"),
+        ("hrv", 0.35),
+        ("restingHr", 0.25),
+        ("sleepHours", 0.20),
+        ("respiration", 0.10),
     )
 
-    for key, weight, directionality in recovery_inputs:
-        value = normalized_deviation(today.get(key), baseline.get(key), directionality)
+    for key, weight in recovery_inputs:
+        value = normalized_metric_deviation(key, today.get(key), baseline.get(key))
         if value is None:
             trace.append(f"{key}: missing")
             continue
@@ -196,7 +200,9 @@ def compute_intensity_permission(
     hrv_delta_pct = _safe_number(comparisons.get("hrvDeltaPct"))
     sleep_delta_pct = _safe_number(comparisons.get("sleepDeltaPct"))
     respiration_delta_pct = _safe_number(comparisons.get("respirationDeltaPct"))
-    resting_hr_delta_bpm = delta_bpm(today.get("restingHr"), baseline.get("restingHr"))
+    resting_hr_delta_bpm = _safe_number(comparisons.get("restingHrDeltaBpm"))
+    if resting_hr_delta_bpm is None:
+        resting_hr_delta_bpm = delta_bpm(today.get("restingHr"), baseline.get("restingHr"))
     quality_yesterday = load.get("yesterdaySessionType") in {"threshold", "vo2"}
 
     hrv_suppressed = hrv_delta_pct is not None and hrv_delta_pct <= -12.0
@@ -362,45 +368,35 @@ def build_avoid_list(
     return deduped[:3]
 
 
-def build_why_lines(*, comparisons: Dict[str, Any], load: Dict[str, Any], today: Dict[str, Any]) -> List[str]:
+def build_why_lines(
+    *,
+    recovery: Dict[str, Any],
+    load_tolerance: Dict[str, Any],
+    intensity: Dict[str, Any],
+    comparisons: Dict[str, Any],
+    load: Dict[str, Any],
+    today: Dict[str, Any],
+) -> List[str]:
     lines: List[str] = []
 
-    hrv_delta = comparisons.get("hrvDeltaPct")
-    resting_hr_delta = comparisons.get("restingHrDeltaPct")
-    sleep_delta = comparisons.get("sleepDeltaPct")
-    respiration_delta = comparisons.get("respirationDeltaPct")
+    for line in (
+        recovery_reason(recovery=recovery, comparisons=comparisons),
+        load_reason(load_tolerance=load_tolerance, load=load),
+        intensity_reason(intensity=intensity),
+        recent_pressure_reason(load=load, today=today),
+    ):
+        if line and line not in lines:
+            lines.append(line)
 
-    if hrv_delta is not None:
-        lines.append(f"HRV {hrv_delta:+.1f}% vs baseline")
-    if resting_hr_delta is not None:
-        lines.append(f"Resting HR {resting_hr_delta:+.1f}% vs baseline")
-    if sleep_delta is not None:
-        lines.append(f"Sleep {sleep_delta:+.1f}% vs baseline")
-    if respiration_delta is not None:
-        lines.append(f"Respiration {respiration_delta:+.1f}% vs baseline")
-
-    ratio = load.get("ratio7to28")
-    if ratio is not None:
-        lines.append(f"7d/28d load ratio {ratio:.2f} {ratio_label(ratio)}")
-
-    hard_sessions_last_3d = int(load.get("hardSessionsLast3d") or 0)
-    if hard_sessions_last_3d <= 0:
-        lines.append("No excessive recent intensity")
-    else:
-        lines.append(f"{hard_sessions_last_3d} hard session(s) in the last 3 days")
-
-    if today.get("readiness") is not None and len(lines) < 5:
-        lines.append(f"Garmin readiness {int(today['readiness'])}")
-
-    return lines[:5]
+    return lines[:4]
 
 
 def build_summary_text(*, recovery: Dict[str, Any], load_tolerance: Dict[str, Any], intensity: Dict[str, Any]) -> str:
     intensity_text = {
-        "vo2": "VO2 work is allowed.",
-        "threshold": "Threshold work is allowed.",
-        "moderate": "Keep it moderate.",
-        "none": "Do not chase intensity.",
+        "vo2": "High intensity can fit today.",
+        "threshold": "Quality work fits best at threshold.",
+        "moderate": "Keep today's work controlled.",
+        "none": "Keep today restorative.",
     }[intensity["value"]]
     return (
         f"Recovery {recovery['status'].lower()}, "
@@ -466,16 +462,6 @@ def readiness_to_component(readiness: Optional[float]) -> Optional[float]:
     return -0.6
 
 
-def normalized_deviation(today_value: Optional[float], baseline_value: Optional[float], directionality: str) -> Optional[float]:
-    if today_value is None or baseline_value in (None, 0):
-        return None
-    if directionality == "lower":
-        deviation = (float(baseline_value) - float(today_value)) / float(baseline_value)
-    else:
-        deviation = (float(today_value) - float(baseline_value)) / float(baseline_value)
-    return max(-1.0, min(1.0, deviation))
-
-
 def recovery_status_from_score(score: float) -> str:
     if score >= 0.35:
         return "Good"
@@ -534,3 +520,63 @@ def _safe_number(value: Any) -> Optional[float]:
     if isinstance(value, (int, float)):
         return float(value)
     return None
+
+
+def recovery_reason(*, recovery: Dict[str, Any], comparisons: Dict[str, Any]) -> str:
+    hrv_delta = _safe_number(comparisons.get("hrvDeltaPct"))
+    resting_hr_delta_bpm = _safe_number(comparisons.get("restingHrDeltaBpm"))
+    sleep_delta_hours = _safe_number(comparisons.get("sleepDeltaHours"))
+    respiration_delta_brpm = _safe_number(comparisons.get("respirationDeltaBrpm"))
+    status = recovery["status"]
+
+    if status == "Poor":
+        if hrv_delta is not None and hrv_delta <= -10.0 and resting_hr_delta_bpm is not None and resting_hr_delta_bpm >= 3.0:
+            return "Recovery suppressed"
+        if sleep_delta_hours is not None and sleep_delta_hours <= -1.0 and respiration_delta_brpm is not None and respiration_delta_brpm >= 1.0:
+            return "Recovery strained"
+        return "Recovery low"
+    if status == "Borderline":
+        return "Recovery borderline"
+    if status == "Stable":
+        return "Recovery steady"
+    return "Recovery supportive"
+
+
+def load_reason(*, load_tolerance: Dict[str, Any], load: Dict[str, Any]) -> str:
+    ratio = _safe_number(load.get("ratio7to28"))
+    status = load_tolerance["status"]
+
+    if status == "Low":
+        return "Load heavily constrained"
+    if status == "Reduced":
+        return "Load reduced"
+    if ratio is not None and ratio > 1.1:
+        return "Load elevated"
+    if status == "High":
+        return "Load open"
+    return "Load controlled"
+
+
+def intensity_reason(*, intensity: Dict[str, Any]) -> str:
+    if intensity["value"] == "none":
+        return "Intensity capped at recovery only"
+    if intensity["value"] == "moderate":
+        return "Intensity capped at moderate"
+    if intensity["value"] == "threshold":
+        return "Threshold fits better than VO2"
+    if intensity["value"] == "vo2":
+        return "High intensity supported"
+    return ""
+
+
+def recent_pressure_reason(*, load: Dict[str, Any], today: Dict[str, Any]) -> str:
+    hard_sessions_last_3d = int(load.get("hardSessionsLast3d") or 0)
+    if hard_sessions_last_3d >= 2:
+        return "Recent quality still carrying forward"
+    if bool(load.get("veryHighYesterdayLoad")):
+        return "Yesterday's load still present"
+
+    readiness = today.get("readiness")
+    if readiness is not None and int(readiness) < 55:
+        return "Readiness remains low"
+    return ""

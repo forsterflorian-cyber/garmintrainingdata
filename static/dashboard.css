@@ -852,31 +852,68 @@ th {
 }
 
 .plan-session-section {
-  margin-top: 16px;
-  padding-top: 16px;
+  margin-top: 14px;
+  padding-top: 14px;
   border-top: 1px solid rgba(173, 212, 202, 0.08);
 }
 
 .plan-actual-session-card {
-  display: grid;
-  gap: 10px;
-  margin-top: 12px;
-  padding: 16px 18px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 14px;
+  margin-top: 10px;
+  padding: 12px 14px;
   border-radius: var(--radius-lg);
   border: 1px solid var(--line);
-  background:
-    linear-gradient(155deg, rgba(86, 208, 179, 0.08), rgba(255, 184, 92, 0.06)),
-    rgba(4, 15, 20, 0.74);
+  background: rgba(4, 15, 20, 0.72);
 }
 
 .plan-actual-session-copy {
   display: grid;
-  gap: 6px;
+  gap: 3px;
+  min-width: 0;
+  flex: 1 1 260px;
 }
 
 .plan-actual-session-copy strong {
-  font-size: 1rem;
+  font-size: 0.96rem;
   line-height: 1.2;
+}
+
+.plan-actual-session-copy p {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.plan-actual-session-card .activity-chips {
+  margin-top: 0;
+}
+
+.plan-session-comparison {
+  margin: 8px 0 0;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(173, 212, 202, 0.12);
+  background: rgba(4, 15, 20, 0.56);
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.plan-session-comparison[data-tone="positive"] {
+  border-color: rgba(99, 230, 190, 0.2);
+  color: var(--good);
+}
+
+.plan-session-comparison[data-tone="warning"] {
+  border-color: rgba(255, 209, 102, 0.2);
+  color: var(--warn);
+}
+
+.plan-session-comparison[data-tone="critical"] {
+  border-color: rgba(255, 126, 114, 0.2);
+  color: var(--danger);
 }
 
 .analysis-divider {
@@ -1090,7 +1127,7 @@ th {
 
 .decision-status-chips {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 10px;
 }
 
@@ -1104,8 +1141,8 @@ th {
 
 .recommendation-chip {
   display: grid;
-  gap: 6px;
-  padding: 12px 14px 13px;
+  gap: 5px;
+  padding: 10px 12px 11px;
   border-radius: 16px;
   background: rgba(3, 11, 16, 0.56);
   min-width: 0;
@@ -1127,13 +1164,13 @@ th {
 .recommendation-chip strong {
   display: block;
   margin-top: 0;
-  font-size: 1rem;
+  font-size: 0.94rem;
   line-height: 1.08;
 }
 
 .recommendation-chip-detail {
   color: var(--muted);
-  font-size: 0.76rem;
+  font-size: 0.72rem;
   line-height: 1.35;
 }
 
@@ -1187,51 +1224,36 @@ th {
 
 .support-cluster {
   display: grid;
-  gap: 0;
+  gap: 12px;
   padding: 18px;
   background: rgba(4, 15, 20, 0.6);
 }
 
 .support-panel {
-  position: relative;
   display: grid;
   gap: 8px;
-  padding-left: 14px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(173, 212, 202, 0.08);
+  background: rgba(3, 11, 16, 0.42);
 }
 
 .support-panel + .support-panel {
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid rgba(173, 212, 202, 0.08);
-}
-
-.support-panel::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 2px;
-  bottom: 2px;
-  width: 2px;
-  border-radius: 999px;
-  background: rgba(173, 212, 202, 0.18);
-}
-
-.support-panel[data-tone="positive"]::before {
-  background: rgba(99, 230, 190, 0.76);
-}
-
-.support-panel[data-tone="warning"]::before {
-  background: rgba(255, 209, 102, 0.76);
-}
-
-.support-panel[data-tone="critical"]::before {
-  background: rgba(255, 126, 114, 0.76);
+  margin-top: 0;
+  padding-top: 14px;
 }
 
 .forecast-meta {
   margin: 0;
   color: var(--muted);
   font-size: 0.82rem;
+}
+
+.forecast-context {
+  margin: 0;
+  color: rgba(242, 244, 238, 0.86);
+  font-size: 0.84rem;
+  line-height: 1.4;
 }
 
 #forecastText,
@@ -1457,9 +1479,8 @@ th {
   border: 1px solid rgba(173, 212, 202, 0.12);
   background: transparent;
   color: var(--muted);
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
+  font-size: 0.74rem;
+  letter-spacing: 0.02em;
 }
 
 .outlook-chip[data-tone="positive"] {
