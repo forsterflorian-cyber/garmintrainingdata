@@ -13,6 +13,12 @@ def classify_day_intensity(day_item: Dict[str, Any]) -> str:
     load_day = float(day_item.get("loadDay") or 0.0)
     aero_sum = float(day_item.get("aeroTeSum") or 0.0)
     anaer_sum = float(day_item.get("anaerTeSum") or 0.0)
+    strength_only_day = bool(activities) and all(_activity_sport_tag(activity) == "strength" for activity in activities)
+
+    if strength_only_day:
+        if any(_is_heavy_strength_activity(activity) for activity in activities) or load_day >= 50.0:
+            return "heavy_strength"
+        return "light_strength"
 
     if any(_is_vo2_activity(activity) for activity in activities) or aero_sum >= 4.5 or anaer_sum >= 1.8 or load_day >= 120:
         return "vo2"
@@ -21,6 +27,27 @@ def classify_day_intensity(day_item: Dict[str, Any]) -> str:
     if load_day >= 40:
         return "moderate"
     if load_day > 0:
+        return "easy"
+    return "recovery"
+
+
+def classify_activity_intensity(activity: Dict[str, Any]) -> str:
+    if not isinstance(activity, dict):
+        return "recovery"
+
+    if _activity_sport_tag(activity) == "strength":
+        if _is_heavy_strength_activity(activity):
+            return "heavy_strength"
+        return "light_strength"
+    if _is_vo2_activity(activity):
+        return "vo2"
+    if _is_threshold_activity(activity):
+        return "threshold"
+
+    load_value = _safe_number(activity.get("training_load")) or 0.0
+    if load_value >= 40.0:
+        return "moderate"
+    if load_value > 0.0:
         return "easy"
     return "recovery"
 
@@ -105,6 +132,34 @@ def _is_vo2_activity(activity: Dict[str, Any]) -> bool:
         or (_safe_number(activity.get("anaerobic_te")) or 0.0) >= 1.4
         or (_safe_number(activity.get("training_load")) or 0.0) >= 100.0
     )
+
+
+def _is_heavy_strength_activity(activity: Dict[str, Any]) -> bool:
+    if not isinstance(activity, dict):
+        return False
+    return (
+        (_safe_number(activity.get("training_load")) or 0.0) >= 45.0
+        or (_safe_number(activity.get("duration_min")) or 0.0) >= 40.0
+        or (_safe_number(activity.get("anaerobic_te")) or 0.0) >= 0.7
+    )
+
+
+def _activity_sport_tag(activity: Dict[str, Any]) -> str:
+    sport_tag = activity.get("sport_tag")
+    if isinstance(sport_tag, str) and sport_tag:
+        return sport_tag
+    type_key = str(activity.get("type_key") or "").strip().lower()
+    if not type_key:
+        return "hybrid"
+    if "run" in type_key or "jog" in type_key:
+        return "run"
+    if "cycl" in type_key or "bike" in type_key or "ride" in type_key:
+        return "bike"
+    if "strength" in type_key or "weight" in type_key or "yoga" in type_key or "pilates" in type_key:
+        return "strength"
+    if "walk" in type_key or "hike" in type_key:
+        return "recovery"
+    return "hybrid"
 
 
 def _safe_number(value: Any) -> Optional[float]:

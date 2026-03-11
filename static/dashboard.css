@@ -671,10 +671,18 @@ th {
   border-radius: 8px;
   border: 1px solid rgba(173, 212, 202, 0.08);
   background: rgba(86, 208, 179, calc(0.08 + var(--strength) * 0.82));
+  cursor: pointer;
+  appearance: none;
+  padding: 0;
 }
 
 .heat-cell.is-active {
   outline: 2px solid rgba(255, 184, 92, 0.82);
+}
+
+.heat-cell:focus-visible {
+  outline: 2px solid rgba(243, 240, 223, 0.88);
+  outline-offset: 2px;
 }
 
 .heat-cell::after {
@@ -694,6 +702,23 @@ th {
   margin-top: 14px;
 }
 
+.activity-day-selector,
+.activity-day-summary {
+  margin-top: 14px;
+}
+
+.activity-day-nav {
+  display: flex;
+  gap: 12px;
+  align-items: end;
+  flex-wrap: wrap;
+}
+
+.activity-day-field {
+  min-width: 220px;
+}
+
+.activity-day-card,
 .activity-card,
 .unit-card {
   padding: 16px;
@@ -702,11 +727,51 @@ th {
   border: 1px solid var(--line);
 }
 
+.activity-card-meta {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+}
+
 .activity-chips {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
   margin-top: 10px;
+}
+
+.activity-comparison-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(173, 212, 202, 0.12);
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.74rem;
+  letter-spacing: 0.02em;
+  text-align: center;
+}
+
+.activity-comparison-badge[data-tone="positive"] {
+  color: var(--good);
+  border-color: rgba(99, 230, 190, 0.2);
+}
+
+.activity-comparison-badge[data-tone="warning"] {
+  color: var(--warn);
+  border-color: rgba(255, 209, 102, 0.18);
+}
+
+.activity-comparison-badge[data-tone="critical"] {
+  color: var(--danger);
+  border-color: rgba(255, 126, 114, 0.2);
+}
+
+.activity-comparison-detail {
+  margin: 10px 0 0;
 }
 
 .chip {

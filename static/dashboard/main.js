@@ -851,6 +851,14 @@ function renderSyncUi(sync = state.syncStatus) {
   }
 }
 
+function setAnalysisDay(date) {
+  if (!date || date === state.analysisDate) {
+    return;
+  }
+  state.analysisDate = date;
+  void loadDashboard({ skipAutoSync: true });
+}
+
 function safeNumeric(value) {
   return Number.isFinite(Number(value)) ? Number(value) : null;
 }
@@ -991,8 +999,8 @@ function resolveActualSessionForPlanDate(payload) {
 
 function planForecastMeta(forecastInputMode) {
   return forecastInputMode === "actual"
-    ? "Completed session drives tomorrow impact and outlook."
-    : "Preview selection drives tomorrow impact and outlook.";
+    ? "Completed session drives tomorrow and the next days."
+    : "Preview selection drives tomorrow and the next days.";
 }
 
 function renderPlanSessionSection({ actualSession, options, selectedType, sessionComparison = null }) {
@@ -1005,11 +1013,11 @@ function renderPlanSessionSection({ actualSession, options, selectedType, sessio
   el("planSessionTitle").textContent = actualMode ? "Completed session" : "Recommended sessions";
   el("planSessionMeta").textContent = actualMode
     ? "Forecast follows the completed session."
-    : "Selection updates tomorrow impact and the next days outlook.";
+    : "Selection updates tomorrow and the next days outlook.";
 
   if (actualMode) {
     el("planActualSessionTitle").textContent = safeText(actualSession.title, "Completed session");
-    el("planActualSessionSummary").textContent = safeText(actualSession.summary, "Forecast uses the completed session.");
+    el("planActualSessionSummary").textContent = safeText(actualSession.summary, "Tomorrow uses the completed session.");
     el("planActualSessionStats").innerHTML = actualSession.chips.length
       ? actualSession.chips.map((chip) => `<span class="chip">${safeHtml(chip)}</span>`).join("")
       : "";
@@ -1067,6 +1075,9 @@ function renderDecisionPanels(payload) {
   const forecastContext = buildForecastContextCopy(forecastSession, {
     forecastInputMode: state.forecastInputMode,
   });
+  const tomorrowContext = state.forecastInputMode === "actual"
+    ? "Based on today's completed session."
+    : "Based on today's preview.";
   const outlook = computeNextDaysOutlook({
     currentDecision: payload?.decision,
     currentMetrics: payload?.today,
@@ -1084,7 +1095,7 @@ function renderDecisionPanels(payload) {
     impact: outlook?.tomorrowImpact,
     plannedOptionLabel: forecastSession?.label || null,
     forecastInputMode: state.forecastInputMode,
-    sourceContext: forecastContext,
+    sourceContext: tomorrowContext,
   });
   renderNextDaysOutlookPanel(outlook, {
     forecastInputMode: state.forecastInputMode,
@@ -1098,10 +1109,17 @@ function renderSummary(payload) {
   el("summaryAverageReadiness").textContent = formatNumber(payload?.summary?.avgReadiness, 1);
   el("summaryAverageLoad").textContent = formatNumber(payload?.summary?.avgLoad, 1);
   el("snapshotFocusDate").textContent = safeText(payload?.date);
-  el("snapshotWindow").textContent = `${safeText(payload?.filters?.periodDays)} Days`;
+  el("snapshotWindow").textContent = `${safeText(payload?.filters?.periodDays)}d trailing / ${safeText(payload?.reference?.baselineDays)}d baseline`;
   el("snapshotRatio").textContent = formatNumber(payload?.load?.ratio7to28, 2);
   el("snapshotStress").textContent = safeText(payload?.decision?.loadTolerance);
   el("snapshotModelRecommendation").textContent = safeText(payload?.decision?.primaryRecommendation);
+  if (el("baselineReferenceCopy")) {
+    const sampleDays = Number(payload?.reference?.baselineSampleDays || 0);
+    const baselineDays = safeText(payload?.reference?.baselineDays);
+    el("baselineReferenceCopy").textContent = payload?.reference?.baselineSource === "rolling"
+      ? `Rolling ${baselineDays}-day reference ending before the focus day. Load ratio stays on 7d / 28d. ${sampleDays ? `Samples used: ${sampleDays} days.` : ""}`.trim()
+      : `Stored Garmin baseline shown because the ${baselineDays}-day range does not yet have enough prior samples. Load ratio stays on 7d / 28d.`;
+  }
 }
 
 function renderDebug(payload, forecast) {
@@ -1179,8 +1197,25 @@ function renderHeatmap(rows, activeDate) {
   target.innerHTML = rows.map((row) => {
     const strength = Math.min(1, Number(row.loadDay || 0) / maxLoad);
     const activeClass = row.date === activeDate ? "is-active" : "";
-    return `<div class="heat-cell ${activeClass}" data-label="${row.date.slice(5)}" style="--strength:${strength.toFixed(3)}" title="${row.date}: ${formatNumber(row.loadDay, 1)}"></div>`;
+    return `
+      <button
+        class="heat-cell ${activeClass}"
+        type="button"
+        data-day="${safeHtml(row.date)}"
+        data-label="${safeHtml(row.date.slice(5))}"
+        style="--strength:${strength.toFixed(3)}"
+        title="${safeHtml(`${row.date}: ${formatNumber(row.loadDay, 1)}`)}"
+        aria-pressed="${row.date === activeDate ? "true" : "false"}"
+        aria-label="${safeHtml(`Select ${row.date} for analysis`)}"
+      ></button>
+    `;
   }).join("");
+
+  target.querySelectorAll(".heat-cell[data-day]").forEach((cell) => {
+    cell.addEventListener("click", () => {
+      setAnalysisDay(cell.dataset.day);
+    });
+  });
 }
 
 function renderHistoryTable(rows, activeDate) {
@@ -1202,28 +1237,141 @@ function renderHistoryTable(rows, activeDate) {
 
   target.querySelectorAll(".history-row").forEach((row) => {
     row.addEventListener("click", () => {
-      state.analysisDate = row.dataset.day;
-      void loadDashboard({ skipAutoSync: true });
+      setAnalysisDay(row.dataset.day);
     });
+  });
+}
+
+function dominantSportTag(activities) {
+  const totals = new Map();
+  activities.forEach((activity) => {
+    const sportTag = safeText(activity?.sport_tag, "");
+    if (!sportTag) {
+      return;
+    }
+    const loadValue = safeNumeric(activity?.training_load) || 0;
+    const durationValue = safeNumeric(activity?.duration_min) || 0;
+    const weight = loadValue > 0 ? loadValue : durationValue;
+    totals.set(sportTag, (totals.get(sportTag) || 0) + weight);
+  });
+
+  let winner = null;
+  let winnerScore = -1;
+  totals.forEach((score, sportTag) => {
+    if (score > winnerScore) {
+      winner = sportTag;
+      winnerScore = score;
+    }
+  });
+  return winner;
+}
+
+function comparisonBadge(comparison) {
+  if (!comparison?.label) {
+    return "";
+  }
+  return `<span class="activity-comparison-badge" data-tone="${safeHtml(comparison.tone || "neutral")}">${safeHtml(comparison.label)}</span>`;
+}
+
+function renderActivityDaySelector(rows, activeDate) {
+  const target = el("activityDaySelector");
+  if (!target) {
+    return;
+  }
+  if (!rows.length) {
+    target.innerHTML = "";
+    return;
+  }
+
+  const orderedRows = rows.slice().reverse();
+  const activeIndex = orderedRows.findIndex((row) => row.date === activeDate);
+  const previous = activeIndex >= 0 && activeIndex < orderedRows.length - 1 ? orderedRows[activeIndex + 1] : null;
+  const next = activeIndex > 0 ? orderedRows[activeIndex - 1] : null;
+
+  target.innerHTML = `
+    <div class="activity-day-nav">
+      <button class="btn btn-secondary activity-day-btn" type="button" data-direction="prev" ${previous ? "" : "disabled"}>Prev Day</button>
+      <label class="toolbar-field activity-day-field">
+        <span>Day</span>
+        <select id="activityDaySelect">
+          ${orderedRows.map((row) => `<option value="${safeHtml(row.date)}" ${row.date === activeDate ? "selected" : ""}>${safeHtml(row.date)}</option>`).join("")}
+        </select>
+      </label>
+      <button class="btn btn-secondary activity-day-btn" type="button" data-direction="next" ${next ? "" : "disabled"}>Next Day</button>
+    </div>
+  `;
+
+  el("activityDaySelect")?.addEventListener("change", (event) => {
+    setAnalysisDay(event.target.value);
+  });
+  target.querySelector('[data-direction="prev"]')?.addEventListener("click", () => {
+    if (previous?.date) {
+      setAnalysisDay(previous.date);
+    }
+  });
+  target.querySelector('[data-direction="next"]')?.addEventListener("click", () => {
+    if (next?.date) {
+      setAnalysisDay(next.date);
+    }
   });
 }
 
 function renderActivities(payload) {
   const activities = payload?.detail?.activities || [];
+  const historyRows = payload?.history?.rows || [];
+  if (!payload?.date && !historyRows.length) {
+    el("activityHeadline").textContent = "Focus Day Activities";
+    el("activityDaySelector").innerHTML = "";
+    el("activityDaySummary").innerHTML = "";
+    el("activityList").innerHTML = '<div class="muted-copy">No Activities For This Day.</div>';
+    return;
+  }
+  const dominantDaySport = dominantSportTag(activities);
+  const dayComparison = compareCompletedSessionToDecision(payload?.detail?.sessionType, payload?.decision, {
+    sportTag: dominantDaySport,
+  });
+  const activitiesWithComparison = activities.map((activity) => ({
+    activity,
+    comparison: compareCompletedSessionToDecision(activity.sessionType, payload?.decision, { sportTag: activity.sport_tag }),
+  }));
+  const totalDuration = activities.reduce((sum, activity) => sum + (safeNumeric(activity?.duration_min) || 0), 0);
+  const totalLoad = activities.reduce((sum, activity) => sum + (safeNumeric(activity?.training_load) || 0), 0);
+
+  renderActivityDaySelector(historyRows, payload?.date);
   el("activityHeadline").textContent = payload?.date ? `Activities On ${payload.date}` : "Focus Day Activities";
+  el("activityDaySummary").innerHTML = `
+    <article class="activity-day-card">
+      <div class="relative-head">
+        <div>
+          <div class="relative-title">Day Context</div>
+          <div class="muted-copy">${safeHtml(safeText(payload?.decision?.primaryRecommendation, "No recommendation"))}</div>
+        </div>
+        ${comparisonBadge(dayComparison)}
+      </div>
+      <div class="activity-chips">
+        <span class="chip">${safeHtml(`${activities.length} activit${activities.length === 1 ? "y" : "ies"}`)}</span>
+        <span class="chip">Duration ${formatNumber(totalDuration, 0)} min</span>
+        <span class="chip">Load ${formatNumber(totalLoad, 0)}</span>
+      </div>
+      ${dayComparison?.detail ? `<p class="muted-copy activity-comparison-detail">${safeHtml(dayComparison.detail)}</p>` : ""}
+    </article>
+  `;
   if (!activities.length) {
     el("activityList").innerHTML = '<div class="muted-copy">No Activities For This Day.</div>';
     return;
   }
 
-  el("activityList").innerHTML = activities.map((activity) => `
+  el("activityList").innerHTML = activitiesWithComparison.map(({ activity, comparison }) => `
     <article class="activity-card">
       <div class="relative-head">
         <div>
           <div class="relative-title">${safeHtml(activity.name || activity.type_key || "Activity")}</div>
           <div class="muted-copy">${safeHtml(activity.type_key || "-")} | ${safeHtml(activity.start_local || "-")}</div>
         </div>
-        <div class="relative-value">${formatNumber(activity.duration_min, 0)} min</div>
+        <div class="activity-card-meta">
+          ${comparisonBadge(comparison)}
+          <div class="relative-value">${formatNumber(activity.duration_min, 0)} min</div>
+        </div>
       </div>
       <div class="activity-chips">
         <span class="chip">Avg HR ${formatNumber(activity.avg_hr, 0)}</span>
@@ -1231,13 +1379,18 @@ function renderActivities(payload) {
         <span class="chip">TE ${formatNumber(activity.aerobic_te, 1)} / ${formatNumber(activity.anaerobic_te, 1)}</span>
         <span class="chip">Load ${formatNumber(activity.training_load, 1)}</span>
       </div>
+      ${comparison?.detail
+        ? `<p class="muted-copy activity-comparison-detail">${safeHtml(comparison.detail)}</p>`
+        : ""}
     </article>
   `).join("");
 }
 
 function renderModeUnits(payload) {
   const units = (payload?.detail?.legacyUnits || {})[state.mode] || (payload?.detail?.legacyUnits || {}).hybrid || [];
-  el("unitIntro").textContent = `Mode: ${state.mode}.`;
+  el("unitIntro").textContent = state.mode === "hybrid"
+    ? "Hybrid mode keeps run, bike, and strength balanced."
+    : `${labelFromKey(state.mode)} focus shifts which options count as the best fit.`;
   if (!units.length) {
     el("unitCards").innerHTML = '<div class="muted-copy">No Model Outputs Available.</div>';
     return;
@@ -1685,7 +1838,7 @@ function bindSyncActionButtons() {
       if (action === "update") {
         void startSyncRequest("/api/sync/update", null, "syncing");
       } else if (action === "backfill") {
-        void startSyncRequest("/api/sync/backfill", { days: 14 }, "backfilling");
+        void startSyncRequest("/api/sync/backfill", { days: 180 }, "backfilling");
       } else if (action === "retry") {
         void startSyncRequest("/api/sync/update", null, "syncing");
       }

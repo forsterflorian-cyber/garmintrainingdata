@@ -272,8 +272,9 @@ function constrainForecastIntensity({ state, rawIntensity, recovery, loadToleran
 function buildTomorrowImpact(day) {
   if (!day) {
     return {
-      headline: "No Outlook",
-      text: "Select a session to preview tomorrow impact.",
+      headline: "Choose today's session",
+      text: "Select a session to update the best fit for tomorrow.",
+      windowLabel: "Tomorrow's training window is waiting for today's session.",
       predictedScore: null,
       tone: "neutral",
     };
@@ -281,7 +282,8 @@ function buildTomorrowImpact(day) {
 
   return {
     headline: tomorrowHeadlineForRecommendation(day.intensityPermission, day.recommendation),
-    text: day.recommendation,
+    text: tomorrowTextForRecommendation(day.intensityPermission, day.recommendation),
+    windowLabel: tomorrowWindowLabel(day.intensityPermission, day.recommendation),
     predictedScore: day.recoveryScore,
     tone: day.tone,
   };
@@ -292,46 +294,75 @@ function outlookRecommendationForDecision(decision, defaultCategory) {
     return { label: "Recovery likely", tone: "critical", intensityPermission: "none" };
   }
   if (decision.primaryRecommendation === "VO2max OK") {
-    return { label: "High intensity may return", tone: "positive", intensityPermission: "vo2" };
+    return { label: "Quality session possible", tone: "positive", intensityPermission: "vo2" };
   }
   if (decision.primaryRecommendation === "Threshold OK") {
-    return { label: "Threshold may fit", tone: "warning", intensityPermission: "threshold" };
+    return { label: "Quality session possible", tone: "warning", intensityPermission: "threshold" };
   }
   if (decision.primaryRecommendation === "Strength OK" || defaultCategory === "heavy_strength") {
-    return { label: "Strength work may fit", tone: "warning", intensityPermission: "moderate" };
+    return { label: "Strength session possible", tone: "warning", intensityPermission: "moderate" };
   }
   if (defaultCategory === "light_strength") {
-    return { label: "Light strength likely", tone: "warning", intensityPermission: "moderate" };
+    return { label: "Light strength fits best", tone: "warning", intensityPermission: "moderate" };
   }
   if (decision.primaryRecommendation === "Moderate only") {
-    return { label: "Moderate work fits best", tone: "warning", intensityPermission: "moderate" };
+    return { label: "Controlled training fits best", tone: "warning", intensityPermission: "moderate" };
   }
   if (decision.primaryRecommendation === "Easy Aerobic") {
-    return { label: "Easy day likely", tone: "warning", intensityPermission: "none" };
+    return { label: "Easy training fits best", tone: "warning", intensityPermission: "none" };
   }
   if (decision.intensityPermission === "threshold") {
-    return { label: "Quality work may fit", tone: "warning", intensityPermission: "threshold" };
+    return { label: "Quality session possible", tone: "warning", intensityPermission: "threshold" };
   }
   if (decision.intensityPermission === "vo2") {
-    return { label: "High intensity may return", tone: "positive", intensityPermission: "vo2" };
+    return { label: "Quality session possible", tone: "positive", intensityPermission: "vo2" };
   }
   if (decision.intensityPermission === "moderate") {
-    return { label: "Moderate work fits best", tone: "warning", intensityPermission: "moderate" };
+    return { label: "Controlled training fits best", tone: "warning", intensityPermission: "moderate" };
   }
-  return { label: "Easy day likely", tone: "warning", intensityPermission: "none" };
+  return { label: "Easy training fits best", tone: "warning", intensityPermission: "none" };
 }
 
 function tomorrowHeadlineForRecommendation(intensityPermission, recommendation) {
-  if (intensityPermission === "vo2" || recommendation.includes("VO2")) {
-    return "VO2 Tomorrow";
+  if (intensityPermission === "vo2" || recommendation.includes("Quality")) {
+    return "Quality session possible";
   }
-  if (intensityPermission === "threshold" || recommendation.includes("Threshold") || recommendation.includes("Quality")) {
-    return "Quality Tomorrow";
+  if (intensityPermission === "threshold" || recommendation.includes("Threshold")) {
+    return "Quality session possible";
   }
-  if (intensityPermission === "moderate" || recommendation.includes("Moderate") || recommendation.includes("Strength")) {
-    return "Moderate Tomorrow";
+  if (recommendation.includes("Strength")) {
+    return "Strength session possible";
   }
-  return "Easy Tomorrow";
+  if (intensityPermission === "moderate" || recommendation.includes("Controlled")) {
+    return "Controlled training fits best";
+  }
+  return "Easy training fits best";
+}
+
+function tomorrowTextForRecommendation(intensityPermission, recommendation) {
+  if (intensityPermission === "vo2" || recommendation.includes("Quality")) {
+    return "Tomorrow's window can support a quality session if today's load stays controlled.";
+  }
+  if (recommendation.includes("Strength")) {
+    return "Tomorrow looks best for leading with strength while endurance stays secondary.";
+  }
+  if (intensityPermission === "moderate" || recommendation.includes("Controlled")) {
+    return "Tomorrow looks better for controlled work than for another hard day.";
+  }
+  return "Tomorrow looks better for easy work and recovery support.";
+}
+
+function tomorrowWindowLabel(intensityPermission, recommendation) {
+  if (intensityPermission === "vo2" || recommendation.includes("Quality")) {
+    return "Best fit for tomorrow: quality if today's session stays under control.";
+  }
+  if (recommendation.includes("Strength")) {
+    return "Best fit for tomorrow: strength-led work.";
+  }
+  if (intensityPermission === "moderate" || recommendation.includes("Controlled")) {
+    return "Best fit for tomorrow: controlled aerobic or steady work.";
+  }
+  return "Best fit for tomorrow: easy or recovery work.";
 }
 
 function outlookCapacityLabel(decision) {

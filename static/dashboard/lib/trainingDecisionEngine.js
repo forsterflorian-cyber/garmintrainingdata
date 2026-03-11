@@ -35,6 +35,7 @@ export function assembleTrainingDecision({ mode = "hybrid", recovery, loadTolera
     loadTolerance,
     intensity,
     strength,
+    mode,
   });
   const bestOptions = buildBestOptions({
     intensityPermission: intensity.value,
@@ -218,7 +219,7 @@ export function computeStrengthPermission({ recovery, intensityPermission, loadT
   return { value: "maintenance_ok", label: "Strength maintenance only" };
 }
 
-export function pickPrimaryRecommendation({ recovery, loadTolerance, intensity, strength }) {
+export function pickPrimaryRecommendation({ recovery, loadTolerance, intensity, strength, mode }) {
   if (intensity.recoveryDay) {
     if (loadTolerance.status === "Low") {
       return "Avoid intensity";
@@ -232,6 +233,9 @@ export function pickPrimaryRecommendation({ recovery, loadTolerance, intensity, 
     return "Threshold OK";
   }
   if (intensity.value === "moderate") {
+    if (mode === "strength" && ["hypertrophy_ok", "maintenance_ok"].includes(strength.value) && ["Good", "Stable"].includes(recovery.status)) {
+      return "Strength OK";
+    }
     if (strength.value === "hypertrophy_ok" && ["Reduced", "Normal"].includes(loadTolerance.status)) {
       return "Strength OK";
     }
@@ -254,21 +258,45 @@ export function buildBestOptions({
   if (["Recovery day", "Avoid intensity"].includes(primaryRecommendation)) {
     optionIds = ["walk_mobility", "easy_spin", "no_structured_intensity"];
   } else if (intensityPermission === "vo2") {
-    optionIds = ["vo2_run", "vo2_ride", "threshold_alternative"];
+    if (mode === "run") {
+      optionIds = ["vo2_run", "threshold_alternative", "vo2_ride"];
+    } else if (mode === "bike") {
+      optionIds = ["vo2_ride", "threshold_alternative", "vo2_run"];
+    } else {
+      optionIds = ["vo2_run", "vo2_ride", "threshold_alternative"];
+    }
   } else if (intensityPermission === "threshold") {
-    optionIds = ["threshold_run", "threshold_ride", "moderate_endurance"];
+    if (mode === "run") {
+      optionIds = ["threshold_run", "moderate_endurance", "threshold_ride"];
+    } else if (mode === "bike") {
+      optionIds = ["threshold_ride", "moderate_endurance", "threshold_run"];
+    } else {
+      optionIds = ["threshold_run", "threshold_ride", "moderate_endurance"];
+    }
   } else if (intensityPermission === "moderate") {
     if (strengthPermission === "hypertrophy_ok" && mode === "strength") {
       optionIds = ["strength_hypertrophy", "moderate_ride", "moderate_run"];
     } else if (primaryRecommendation === "Strength OK") {
       optionIds = ["strength_hypertrophy", "moderate_ride", "moderate_run"];
+    } else if (mode === "run") {
+      optionIds = ["moderate_run", "strength_maintenance", "moderate_ride"];
+    } else if (mode === "bike") {
+      optionIds = ["moderate_ride", "strength_maintenance", "moderate_run"];
     } else {
       optionIds = ["moderate_ride", "moderate_run", "strength_maintenance"];
     }
   } else if (recoveryStatus === "Poor") {
     optionIds = ["walk_mobility", "easy_spin", "no_structured_intensity"];
   } else {
-    optionIds = ["easy_ride", "easy_run", "strength_light"];
+    if (mode === "run") {
+      optionIds = ["easy_run", "strength_light", "easy_ride"];
+    } else if (mode === "bike") {
+      optionIds = ["easy_ride", "strength_light", "easy_run"];
+    } else if (mode === "strength") {
+      optionIds = ["strength_light", "easy_ride", "easy_run"];
+    } else {
+      optionIds = ["easy_ride", "easy_run", "strength_light"];
+    }
   }
 
   return prioritizeForMode(optionIds, mode)

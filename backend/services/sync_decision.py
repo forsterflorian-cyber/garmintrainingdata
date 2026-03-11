@@ -17,6 +17,10 @@ class SyncPolicy:
     stale_threshold_hours: int = int(os.environ.get("SYNC_STALE_HOURS", "12"))
     backfill_threshold_days: int = int(os.environ.get("SYNC_BACKFILL_THRESHOLD_DAYS", "3"))
     auto_backfill_limit_days: int = int(os.environ.get("SYNC_AUTO_BACKFILL_LIMIT_DAYS", "3"))
+    initial_backfill_days: int = int(os.environ.get("SYNC_INITIAL_BACKFILL_DAYS", "180"))
+    missing_days_window_days: int = int(os.environ.get("SYNC_MISSING_DAYS_WINDOW_DAYS", "180"))
+    incremental_sync_days: int = int(os.environ.get("SYNC_INCREMENTAL_SYNC_DAYS", "3"))
+    incremental_gap_fill_days: int = int(os.environ.get("SYNC_INCREMENTAL_GAP_FILL_DAYS", "3"))
     lock_ttl_seconds: int = int(os.environ.get("SYNC_LOCK_TTL_SECONDS", "600"))
     auto_poll_seconds: int = int(os.environ.get("SYNC_POLL_SECONDS", "5"))
 
@@ -68,7 +72,7 @@ def decide_sync_action(
         return result(False, "update", "partial_success", state_before, cooldown_active, backfill_recommended, baseline_rebuild_recommended)
 
     if state_before == "never_synced":
-        return result(True, "update", "never_synced", state_before, cooldown_active, backfill_recommended, baseline_rebuild_recommended)
+        return result(True, "backfill", "initial_backfill", state_before, cooldown_active, backfill_recommended, baseline_rebuild_recommended)
 
     if dashboard_needs.get("missingRecentDay") or state_before == "stale":
         if small_auto_backfill:
@@ -118,6 +122,9 @@ def build_sync_status_response(
         "backfillRecommended": decision["backfill_recommended"],
         "baselineRebuildRecommended": decision["baseline_rebuild_recommended"],
         "missingDaysCount": int(dashboard_needs.get("missingDaysCount") or 0),
+        "missingDaysWindowDays": int(dashboard_needs.get("missingDaysWindowDays") or 0),
+        "targetHistoryDays": int(dashboard_needs.get("targetHistoryDays") or 0),
+        "historyCoverageDays": int(dashboard_needs.get("historyCoverageDays") or 0),
         "canStartSync": manual_allowed,
         "statusReason": decision["reason"],
         "isLocked": is_lock_active(sync_status),
@@ -133,6 +140,7 @@ def build_sync_status_response(
             "cooldownActive": is_cooldown_active(sync_status, now),
             "cooldownUntil": sync_status.get("cooldown_until"),
             "missingDaysCount": int(dashboard_needs.get("missingDaysCount") or 0),
+            "missingDaysWindowDays": int(dashboard_needs.get("missingDaysWindowDays") or 0),
             "autoSyncDecisionReason": decision["reason"],
             "lastErrorCode": sync_status.get("last_error_code"),
         }

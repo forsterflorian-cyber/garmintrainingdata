@@ -15,9 +15,9 @@
       <span>Mode</span>
       <select id="modeSelect">
         <option value="hybrid">Hybrid</option>
-        <option value="run">Run</option>
-        <option value="bike">Bike</option>
-        <option value="strength">Strength</option>
+        <option value="run">Run Focus</option>
+        <option value="bike">Bike Focus</option>
+        <option value="strength">Strength Focus</option>
       </select>
     </label>
   </div>
@@ -29,6 +29,7 @@
       <div>
         <p class="eyebrow">Baseline Comparison</p>
         <h2>Focus Day Vs Baseline</h2>
+        <p id="baselineReferenceCopy" class="muted-copy">Reference window follows the selected range.</p>
       </div>
       <div class="mini-summary">
         <div>
@@ -137,7 +138,7 @@
               <p class="eyebrow">Load Heatmap</p>
               <h3>Training Stress Density</h3>
             </div>
-            <p class="muted-copy">Darker blocks indicate relatively heavier days.</p>
+            <p class="muted-copy">Use the heatmap as the quickest day selector for Analysis. Plan stays unchanged.</p>
           </div>
           <div id="loadHeatmap" class="heatmap"></div>
         </article>
@@ -148,7 +149,7 @@
               <p class="eyebrow">Decision History</p>
               <h3>Day-By-Day Table</h3>
             </div>
-            <p class="muted-copy">Selecting a day updates the analysis panels without changing Plan.</p>
+            <p class="muted-copy">The table stays for detail, but the heatmap is the faster selector.</p>
           </div>
           <div class="table-wrap">
             <table>
@@ -176,8 +177,10 @@
               <p class="eyebrow">Activities</p>
               <h3 id="activityHeadline">Focus Day Activities</h3>
             </div>
-            <p class="muted-copy">Raw Garmin activities stay available for context.</p>
+            <p class="muted-copy">Raw Garmin activities stay available, with a recommendation check for the selected day.</p>
           </div>
+          <div id="activityDaySelector" class="activity-day-selector"></div>
+          <div id="activityDaySummary" class="activity-day-summary"></div>
           <div id="activityList" class="activity-list"></div>
         </article>
 

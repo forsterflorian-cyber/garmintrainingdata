@@ -38,22 +38,25 @@ def project_tomorrow_effect(
     if predicted_score > 0.15:
         return {
             "predictedScore": predicted_score,
-            "outlook": "likely quality possible",
+            "outlook": "quality session possible",
             "tone": "positive",
-            "text": "Tomorrow likely moderate or quality",
+            "text": "Tomorrow's window can support a quality session.",
+            "windowLabel": "Best fit for tomorrow: quality work.",
         }
     if predicted_score >= -0.10:
         return {
             "predictedScore": predicted_score,
-            "outlook": "likely moderate",
+            "outlook": "controlled training fits best",
             "tone": "warning",
-            "text": "Tomorrow likely easy/moderate",
+            "text": "Tomorrow looks better for controlled work than for another hard day.",
+            "windowLabel": "Best fit for tomorrow: controlled aerobic work.",
         }
     return {
         "predictedScore": predicted_score,
-        "outlook": "likely easy/recovery",
+        "outlook": "easy training fits best",
         "tone": "critical",
-        "text": "Tomorrow likely easy/recovery",
+        "text": "Tomorrow looks better for easy or recovery work.",
+        "windowLabel": "Best fit for tomorrow: easy or recovery work.",
     }
 
 

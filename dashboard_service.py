@@ -10,7 +10,7 @@ from backend.services.baseline_service import (
     build_metric_delta_bars,
     build_today_metrics,
 )
-from backend.services.load_service import build_load_snapshot, classify_day_intensity
+from backend.services.load_service import build_load_snapshot, classify_activity_intensity, classify_day_intensity
 from backend.services.training_decision import compute_training_decision
 from garmin_hybrid_report_v62_supabase_ready import ActivitySummary, build_ai_prompt as report_build_ai_prompt
 from training_config import TRAINING_CONFIG
@@ -87,7 +87,11 @@ def payload_for_date(rows: List[Dict[str, Any]], selected_date: Optional[str]) -
 
 
 def build_series(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    items = build_day_items(rows, mode="hybrid")
+    items = build_day_items(
+        rows,
+        mode="hybrid",
+        reference_days=TRAINING_CONFIG.windows.default_dashboard_range,
+    )
     return [
         {
             "date": item["date"],
@@ -159,17 +163,24 @@ def build_dashboard_payload(
     include_debug: bool = False,
 ) -> Dict[str, Any]:
     mode = mode_or_default(mode)
-    day_items = build_day_items(rows, mode=mode)
+    day_items = build_day_items(rows, mode=mode, reference_days=period_days)
     if not day_items:
         return {
             "date": selected_date,
             "mode": mode,
-            "filters": {"periodDays": period_days},
+            "filters": {"periodDays": period_days, "baselineDays": period_days},
             "account": account_summary or {},
             "sync": sync_summary or {},
             "history": {"rows": []},
             "trends": {"readinessSeries": [], "loadSeries": []},
             "summary": {"avgReadiness": None, "avgLoad": None, "days": 0},
+            "reference": {
+                "rangeDays": period_days,
+                "baselineDays": period_days,
+                "baselineSource": "rolling",
+                "baselineSampleDays": 0,
+                "loadRatioWindowLabel": "7d / 28d load ratio",
+            },
         }
 
     focus_item = select_focus_item(day_items, selected_date)
@@ -179,7 +190,7 @@ def build_dashboard_payload(
     payload = {
         "date": focus_item["date"],
         "mode": mode,
-        "filters": {"periodDays": period_days},
+        "filters": {"periodDays": period_days, "baselineDays": period_days},
         "today": {
             **focus_item["today"],
             "pulseOx": focus_item.get("pulseOx"),
@@ -231,6 +242,13 @@ def build_dashboard_payload(
         "account": account_summary or {},
         "sync": sync_summary or {},
         "summary": summary,
+        "reference": {
+            "rangeDays": period_days,
+            "baselineDays": period_days,
+            "baselineSource": focus_item["baselineMeta"]["source"],
+            "baselineSampleDays": focus_item["baselineMeta"]["sampleDays"],
+            "loadRatioWindowLabel": "7d / 28d load ratio",
+        },
         "detail": {
             "activeDate": focus_item["date"],
             "sessionType": focus_item.get("sessionType"),
@@ -245,7 +263,7 @@ def build_dashboard_payload(
     return payload
 
 
-def build_day_items(rows: List[Dict[str, Any]], *, mode: str) -> List[Dict[str, Any]]:
+def build_day_items(rows: List[Dict[str, Any]], *, mode: str, reference_days: int) -> List[Dict[str, Any]]:
     items: List[Dict[str, Any]] = []
     for row in rows:
         payload = _normalized_row_payload(row)
@@ -256,6 +274,7 @@ def build_day_items(rows: List[Dict[str, Any]], *, mode: str) -> List[Dict[str, 
         items.append(item)
 
     items.sort(key=lambda item: item["date"])
+    _apply_reference_baselines(items, reference_days=reference_days)
 
     for item in items:
         load_snapshot = build_load_snapshot(item, items)
@@ -279,20 +298,21 @@ def payload_to_day_item(payload: Dict[str, Any], *, mode: str) -> Dict[str, Any]
     load_metrics = _dict_or_empty(payload.get("load_metrics"))
     readiness = _dict_or_empty(payload.get("readiness"))
     today = build_today_metrics(morning, readiness.get("score"))
-    baseline = build_baseline_metrics_snapshot(readiness)
-    comparisons = build_comparisons(today, baseline)
     activities = _sanitized_activities(payload.get("activities"))
     legacy_recommendations = _dict_or_empty(payload.get("recommendations"))
     legacy_units = _dict_or_empty(payload.get("units"))
+    stored_baseline = build_baseline_metrics_snapshot(readiness)
 
     return {
         "date": payload.get("date"),
         "mode": mode,
         "today": today,
         "pulseOx": morning.get("pulse_ox"),
-        "baseline": baseline,
-        "comparisons": comparisons,
-        "baselineBars": build_metric_delta_bars(today, baseline),
+        "storedBaseline": stored_baseline,
+        "baseline": stored_baseline,
+        "baselineMeta": {"source": "stored", "sampleDays": 0},
+        "comparisons": build_comparisons(today, stored_baseline),
+        "baselineBars": build_metric_delta_bars(today, stored_baseline),
         "recommendationDay": payload.get("recommendation_day") or payload.get("date"),
         "activities": activities,
         "legacyRecommendations": legacy_recommendations,
@@ -322,7 +342,7 @@ def filter_period_items(day_items: List[Dict[str, Any]], focus_date: str, period
     return [
         item
         for item in day_items
-        if (distance := _date_distance(item["date"], focus_date)) is not None and distance < period_days
+        if (distance := _date_distance(item["date"], focus_date)) is not None and 0 <= distance < period_days
     ]
 
 
@@ -341,7 +361,7 @@ def _date_distance(day: str, focus_day: str) -> Optional[int]:
     focus_value = _parse_iso_day(focus_day)
     if day_value is None or focus_value is None:
         return None
-    return abs((focus_value - day_value).days)
+    return (focus_value - day_value).days
 
 
 def _safe_number(value: Any) -> Optional[float]:
@@ -400,7 +420,8 @@ def _sanitized_activity(value: Any) -> Optional[Dict[str, Any]]:
 
     type_key = _string_or_default(value.get("type_key"), "unknown")
     name = _string_or_default(value.get("name"), type_key)
-    return {
+    sport_tag = _sport_tag_for_type(type_key)
+    activity = {
         "activity_id": _safe_int(value.get("activity_id")),
         "start_local": _string_or_default(value.get("start_local"), ""),
         "date_local": _string_or_default(value.get("date_local"), ""),
@@ -417,7 +438,10 @@ def _sanitized_activity(value: Any) -> Optional[Dict[str, Any]]:
         "aerobic_te": _safe_number(value.get("aerobic_te")),
         "anaerobic_te": _safe_number(value.get("anaerobic_te")),
         "training_load": _safe_number(value.get("training_load")),
+        "sport_tag": sport_tag,
     }
+    activity["sessionType"] = classify_activity_intensity(activity)
+    return activity
 
 
 def _activity_summary(activity: Dict[str, Any]) -> ActivitySummary:
@@ -477,3 +501,50 @@ def _string_or_none(value: Any) -> Optional[str]:
     if isinstance(value, str):
         return value
     return None
+
+
+def _apply_reference_baselines(day_items: List[Dict[str, Any]], *, reference_days: int) -> None:
+    metric_keys = ("hrv", "restingHr", "sleepHours", "respiration")
+    min_samples = 3
+
+    for index, item in enumerate(day_items):
+        reference_items = [
+            candidate
+            for candidate in day_items[:index]
+            if (distance := _date_distance(candidate["date"], item["date"])) is not None and 0 < distance <= reference_days
+        ]
+        baseline = dict(item.get("storedBaseline") or {})
+        used_rolling_metric = False
+
+        for key in metric_keys:
+            values = [
+                float(candidate["today"][key])
+                for candidate in reference_items
+                if isinstance(candidate.get("today", {}).get(key), (int, float))
+            ]
+            if len(values) >= min_samples or (values and baseline.get(key) is None):
+                baseline[key] = round(sum(values) / len(values), 2)
+                used_rolling_metric = True
+
+        item["baseline"] = baseline
+        item["baselineMeta"] = {
+            "source": "rolling" if used_rolling_metric else "stored",
+            "sampleDays": len(reference_items),
+        }
+        item["comparisons"] = build_comparisons(item["today"], baseline)
+        item["baselineBars"] = build_metric_delta_bars(item["today"], baseline)
+
+
+def _sport_tag_for_type(type_key: str) -> str:
+    normalized = str(type_key or "").strip().lower()
+    if not normalized:
+        return "hybrid"
+    if "run" in normalized or "jog" in normalized:
+        return "run"
+    if "cycl" in normalized or "bike" in normalized or "ride" in normalized:
+        return "bike"
+    if "strength" in normalized or "weight" in normalized or "yoga" in normalized or "pilates" in normalized:
+        return "strength"
+    if "walk" in normalized or "hike" in normalized:
+        return "recovery"
+    return "hybrid"

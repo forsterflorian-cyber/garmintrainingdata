@@ -82,6 +82,49 @@ class TrainingDecisionLogicTests(unittest.TestCase):
         self.assertIn("Intensity capped at recovery only", decision["why"])
         self.assertTrue(all("%" not in line for line in decision["why"]))
 
+    def test_mode_changes_strength_recommendation_and_focus_reason(self):
+        payload = {
+            "today": {
+                "readiness": 70,
+                "hrv": 60,
+                "restingHr": 50,
+                "sleepHours": 7.0,
+                "respiration": 14.0,
+            },
+            "baseline": {
+                "hrv": 50,
+                "restingHr": 50,
+                "sleepHours": 7.0,
+                "respiration": 14.0,
+            },
+            "comparisons": {
+                "hrvDeltaPct": 20.0,
+                "restingHrDeltaPct": 0.0,
+                "restingHrDeltaBpm": 0.0,
+                "sleepDeltaPct": 0.0,
+                "sleepDeltaHours": 0.0,
+                "respirationDeltaPct": 0.0,
+                "respirationDeltaBrpm": 0.0,
+            },
+            "load": {
+                "ratio7to28": 1.2,
+                "hardSessionsLast3d": 1,
+                "hardSessionsLast7d": 1,
+                "yesterdaySessionType": "threshold",
+                "veryHighYesterdayLoad": False,
+            },
+        }
+
+        hybrid_decision = compute_training_decision({"mode": "hybrid", **payload})
+        strength_decision = compute_training_decision({"mode": "strength", **payload})
+        run_decision = compute_training_decision({"mode": "run", **payload})
+
+        self.assertEqual(hybrid_decision["primaryRecommendation"], "Moderate only")
+        self.assertEqual(strength_decision["primaryRecommendation"], "Strength OK")
+        self.assertEqual(strength_decision["bestOptions"][0]["sportTag"], "strength")
+        self.assertEqual(run_decision["bestOptions"][0]["sportTag"], "run")
+        self.assertIn("Run focus keeps moderate run first", run_decision["why"])
+
 
 if __name__ == "__main__":
     unittest.main()

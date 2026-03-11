@@ -111,7 +111,7 @@ class SyncRunner:
                 status_state = "success"
             elif mode == "backfill":
                 imported_records, days_synced, latest_synced_day = self._run_backfill_sync_blocking(user_id, lock_token=lock_token, days=days)
-                status_state = "partial_success" if self._missing_days_count(user_id) > self._policy.backfill_threshold_days else "success"
+                status_state = "partial_success" if self._missing_days_count(user_id) > 0 else "success"
             else:
                 imported_records, days_synced, latest_synced_day = self._run_baseline_rebuild_blocking(user_id, lock_token=lock_token)
                 status_state = "success"
@@ -173,17 +173,34 @@ class SyncRunner:
             return {"started": True, "status": final_status}
 
     def _run_update_sync_blocking(self, user_id: str, *, lock_token: str) -> tuple[int, int, Optional[str]]:
-        return self._sync_recent_window(user_id, lock_token=lock_token, days=3)
-
-    def _run_backfill_sync_blocking(self, user_id: str, *, lock_token: str, days: Optional[int]) -> tuple[int, int, Optional[str]]:
-        # Auto backfill stays deliberately small; manual backfill can request a larger window.
-        chunk_days = self._policy.auto_backfill_limit_days if days is None else max(1, int(days))
         rows = fetch_training_rows(
             self._supabase,
             user_id,
             limit=TRAINING_CONFIG.windows.dashboard_history_limit,
         )
-        target_days = self._missing_day_values(rows, window_days=TRAINING_CONFIG.windows.chronic_load_days)[:chunk_days]
+        recent_days = [
+            (date.today() - timedelta(days=offset)).isoformat()
+            for offset in range(self._policy.incremental_sync_days - 1, -1, -1)
+        ]
+        gap_fill_days = [
+            day
+            for day in self._missing_day_values(rows, window_days=self._policy.missing_days_window_days)
+            if day not in recent_days
+        ][: self._policy.incremental_gap_fill_days]
+        return self._sync_days(
+            user_id,
+            lock_token=lock_token,
+            target_days=[*recent_days, *gap_fill_days],
+        )
+
+    def _run_backfill_sync_blocking(self, user_id: str, *, lock_token: str, days: Optional[int]) -> tuple[int, int, Optional[str]]:
+        requested_days = self._policy.initial_backfill_days if days is None else max(1, int(days))
+        rows = fetch_training_rows(
+            self._supabase,
+            user_id,
+            limit=TRAINING_CONFIG.windows.dashboard_history_limit,
+        )
+        target_days = self._missing_day_values(rows, window_days=requested_days)
         if not target_days:
             return 0, 0, None
         return self._sync_days(user_id, lock_token=lock_token, target_days=target_days)
@@ -363,7 +380,7 @@ class SyncRunner:
         )
         account = self._store.fetch_account(user_id)
         latest_data_day = self._latest_valid_row_day(rows)
-        missing_days_count = self._missing_days_count_from_rows(rows)
+        missing_days_count = self._missing_days_count_from_rows(rows, window_days=self._policy.missing_days_window_days)
         missing_recent_day = True
         if latest_data_day:
             latest = self._parse_iso_day(latest_data_day)
@@ -372,6 +389,9 @@ class SyncRunner:
         return {
             "latestDataDay": latest_data_day,
             "missingDaysCount": missing_days_count,
+            "missingDaysWindowDays": self._policy.missing_days_window_days,
+            "targetHistoryDays": self._policy.initial_backfill_days,
+            "historyCoverageDays": self._history_coverage_days(missing_days_count),
             "missingRecentDay": missing_recent_day,
             "hasCredentials": bool(account and account.garmin_email_enc and account.garmin_password_enc),
         }
@@ -382,10 +402,10 @@ class SyncRunner:
             user_id,
             limit=TRAINING_CONFIG.windows.dashboard_history_limit,
         )
-        return self._missing_days_count_from_rows(rows)
+        return self._missing_days_count_from_rows(rows, window_days=self._policy.missing_days_window_days)
 
     @staticmethod
-    def _missing_days_count_from_rows(rows: List[Dict[str, Any]], window_days: int = 28) -> int:
+    def _missing_days_count_from_rows(rows: List[Dict[str, Any]], window_days: int = 180) -> int:
         day_set = SyncRunner._valid_row_days(rows)
         today_value = date.today()
         missing = 0
@@ -409,6 +429,9 @@ class SyncRunner:
     @staticmethod
     def _stale_score(missing_days_count: int) -> int:
         return min(100, missing_days_count * 5)
+
+    def _history_coverage_days(self, missing_days_count: int) -> int:
+        return max(0, self._policy.initial_backfill_days - int(missing_days_count or 0))
 
     @staticmethod
     def _latest_valid_row_day(rows: List[Dict[str, Any]]) -> Optional[str]:

@@ -32,6 +32,7 @@ def compute_training_decision(input_payload: Dict[str, Any]) -> Dict[str, Any]:
         load_tolerance=load_tolerance,
         intensity=intensity,
         strength=strength,
+        mode=mode,
     )
     best_options = build_best_options(
         intensity_permission=intensity["value"],
@@ -53,8 +54,16 @@ def compute_training_decision(input_payload: Dict[str, Any]) -> Dict[str, Any]:
         comparisons=comparisons,
         load=load,
         today=today,
+        mode=mode,
+        best_options=best_options,
     )
-    summary_text = build_summary_text(recovery=recovery, load_tolerance=load_tolerance, intensity=intensity)
+    summary_text = build_summary_text(
+        recovery=recovery,
+        load_tolerance=load_tolerance,
+        intensity=intensity,
+        mode=mode,
+        best_options=best_options,
+    )
     tomorrow_impact = build_tomorrow_impacts(
         recovery_score=float(recovery["score"]),
         hard_sessions_last_3d=int(load.get("hardSessionsLast3d") or 0),
@@ -293,6 +302,7 @@ def pick_primary_recommendation(
     load_tolerance: Dict[str, Any],
     intensity: Dict[str, Any],
     strength: Dict[str, Any],
+    mode: str,
 ) -> str:
     if intensity["recoveryDay"]:
         if load_tolerance["status"] == "Low":
@@ -303,6 +313,8 @@ def pick_primary_recommendation(
     if intensity["value"] == "threshold":
         return "Threshold OK"
     if intensity["value"] == "moderate":
+        if mode == "strength" and strength["value"] in {"hypertrophy_ok", "maintenance_ok"} and recovery["status"] in {"Good", "Stable"}:
+            return "Strength OK"
         if strength["value"] == "hypertrophy_ok" and load_tolerance["status"] in {"Reduced", "Normal"}:
             return "Strength OK"
         return "Moderate only"
@@ -322,20 +334,41 @@ def build_best_options(
     if primary_recommendation in {"Recovery day", "Avoid intensity"}:
         option_ids = ["walk_mobility", "easy_spin", "no_structured_intensity"]
     elif intensity_permission == "vo2":
-        option_ids = ["vo2_run", "vo2_ride", "threshold_alternative"]
+        if mode == "run":
+            option_ids = ["vo2_run", "threshold_alternative", "vo2_ride"]
+        elif mode == "bike":
+            option_ids = ["vo2_ride", "threshold_alternative", "vo2_run"]
+        else:
+            option_ids = ["vo2_run", "vo2_ride", "threshold_alternative"]
     elif intensity_permission == "threshold":
-        option_ids = ["threshold_run", "threshold_ride", "moderate_endurance"]
+        if mode == "run":
+            option_ids = ["threshold_run", "moderate_endurance", "threshold_ride"]
+        elif mode == "bike":
+            option_ids = ["threshold_ride", "moderate_endurance", "threshold_run"]
+        else:
+            option_ids = ["threshold_run", "threshold_ride", "moderate_endurance"]
     elif intensity_permission == "moderate":
         if strength_permission == "hypertrophy_ok" and mode == "strength":
             option_ids = ["strength_hypertrophy", "moderate_ride", "moderate_run"]
         elif primary_recommendation == "Strength OK":
             option_ids = ["strength_hypertrophy", "moderate_ride", "moderate_run"]
+        elif mode == "run":
+            option_ids = ["moderate_run", "strength_maintenance", "moderate_ride"]
+        elif mode == "bike":
+            option_ids = ["moderate_ride", "strength_maintenance", "moderate_run"]
         else:
             option_ids = ["moderate_ride", "moderate_run", "strength_maintenance"]
     elif recovery_status == "Poor":
         option_ids = ["walk_mobility", "easy_spin", "no_structured_intensity"]
     else:
-        option_ids = ["easy_ride", "easy_run", "strength_light"]
+        if mode == "run":
+            option_ids = ["easy_run", "strength_light", "easy_ride"]
+        elif mode == "bike":
+            option_ids = ["easy_ride", "strength_light", "easy_run"]
+        elif mode == "strength":
+            option_ids = ["strength_light", "easy_ride", "easy_run"]
+        else:
+            option_ids = ["easy_ride", "easy_run", "strength_light"]
 
     option_ids = prioritize_for_mode(option_ids, mode)
     return [session_to_best_option(get_session(option_id)) for option_id in option_ids[:3]]
@@ -376,6 +409,8 @@ def build_why_lines(
     comparisons: Dict[str, Any],
     load: Dict[str, Any],
     today: Dict[str, Any],
+    mode: str,
+    best_options: List[Dict[str, Any]],
 ) -> List[str]:
     lines: List[str] = []
 
@@ -384,6 +419,7 @@ def build_why_lines(
         load_reason(load_tolerance=load_tolerance, load=load),
         intensity_reason(intensity=intensity),
         recent_pressure_reason(load=load, today=today),
+        mode_reason(mode=mode, best_options=best_options),
     ):
         if line and line not in lines:
             lines.append(line)
@@ -391,18 +427,29 @@ def build_why_lines(
     return lines[:4]
 
 
-def build_summary_text(*, recovery: Dict[str, Any], load_tolerance: Dict[str, Any], intensity: Dict[str, Any]) -> str:
+def build_summary_text(
+    *,
+    recovery: Dict[str, Any],
+    load_tolerance: Dict[str, Any],
+    intensity: Dict[str, Any],
+    mode: str,
+    best_options: List[Dict[str, Any]],
+) -> str:
     intensity_text = {
         "vo2": "High intensity can fit today.",
         "threshold": "Quality work fits best at threshold.",
         "moderate": "Keep today's work controlled.",
         "none": "Keep today restorative.",
     }[intensity["value"]]
-    return (
+    summary = (
         f"Recovery {recovery['status'].lower()}, "
         f"load tolerance {load_tolerance['status'].lower()}, "
         f"{intensity_text}"
     )
+    mode_line = mode_reason(mode=mode, best_options=best_options)
+    if mode_line:
+        return f"{summary} {mode_line}."
+    return summary
 
 
 def build_decision_trace(
@@ -579,4 +626,18 @@ def recent_pressure_reason(*, load: Dict[str, Any], today: Dict[str, Any]) -> st
     readiness = today.get("readiness")
     if readiness is not None and int(readiness) < 55:
         return "Readiness remains low"
+    return ""
+
+
+def mode_reason(*, mode: str, best_options: List[Dict[str, Any]]) -> str:
+    if mode == "hybrid" or not best_options:
+        return ""
+
+    lead_option = best_options[0]
+    if mode == "run":
+        return f"Run focus keeps {lead_option['label'].lower()} first"
+    if mode == "bike":
+        return f"Bike focus keeps {lead_option['label'].lower()} first"
+    if mode == "strength":
+        return f"Strength focus keeps {lead_option['label'].lower()} first"
     return ""

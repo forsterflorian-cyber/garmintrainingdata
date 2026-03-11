@@ -51,6 +51,7 @@ export function syncReasonLabel(reason) {
     gap_detected: "Backfill recommended",
     garmin_invalid_credentials: "Reconnect Garmin required",
     garmin_temporary_error: "Temporary Garmin issue",
+    initial_backfill: "Initial backfill recommended",
     manual_request: "Sync requested",
     missing_recent_day: "Recent data missing",
     never_synced: "No successful sync yet",
@@ -159,6 +160,9 @@ export function getSyncUiCopy(sync = {}) {
       ...copy,
       headline: "No successful sync yet",
       reasonLabel: "No successful sync yet",
+      detail: sync?.targetHistoryDays
+        ? `Run the initial ${safeText(sync.targetHistoryDays)}-day backfill to build analysis history.`
+        : "",
       summaryText: "No successful sync yet",
       metaText: "Never synced",
     };
@@ -170,12 +174,13 @@ export function getSyncUiCopy(sync = {}) {
 function buildAdvisoryLines(sync) {
   const advisoryLines = [];
   const missingDaysCount = normalizeMissingDays(sync?.missingDaysCount);
+  const windowDays = normalizeMissingDays(sync?.missingDaysWindowDays) || normalizeMissingDays(sync?.targetHistoryDays);
 
   if (sync?.backfillRecommended) {
     advisoryLines.push("Backfill recommended");
   }
   if (missingDaysCount > 0 && (sync?.backfillRecommended || missingDaysCount >= 7)) {
-    advisoryLines.push(`${missingDaysCount} missing days detected`);
+    advisoryLines.push(windowDays ? `${missingDaysCount} missing days detected in ${windowDays}d` : `${missingDaysCount} missing days detected`);
   }
 
   return advisoryLines;

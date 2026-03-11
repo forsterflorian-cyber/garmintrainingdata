@@ -11,7 +11,7 @@ export function renderSyncActionButtons(sync, targetId = "syncActionButtons") {
 
   target.innerHTML = `
     <button class="btn btn-secondary sync-action-btn" type="button" data-action="update" ${disabled ? "disabled" : ""}>Update</button>
-    <button class="btn btn-secondary sync-action-btn" type="button" data-action="backfill" ${disabled ? "disabled" : ""}>Backfill</button>
+    <button class="btn btn-secondary sync-action-btn" type="button" data-action="backfill" ${disabled ? "disabled" : ""}>Backfill 180d</button>
     <button class="btn btn-secondary sync-action-btn" type="button" data-action="retry" ${retryDisabled ? "disabled" : ""}>Retry</button>
   `;
 }

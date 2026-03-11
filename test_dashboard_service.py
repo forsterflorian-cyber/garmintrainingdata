@@ -88,6 +88,10 @@ class DashboardServiceHardeningTests(unittest.TestCase):
         self.assertEqual(payload["today"]["sessionType"], "threshold")
         self.assertEqual(payload["detail"]["sessionType"], "threshold")
         self.assertEqual(payload["history"]["rows"][0]["sessionType"], "threshold")
+        self.assertEqual(payload["detail"]["activities"][0]["sport_tag"], "run")
+        self.assertEqual(payload["detail"]["activities"][0]["sessionType"], "threshold")
+        self.assertEqual(payload["reference"]["baselineDays"], 28)
+        self.assertEqual(payload["reference"]["baselineSource"], "stored")
 
     def test_build_prompt_from_payload_tolerates_partial_activity_payloads(self):
         prompt = build_prompt_from_payload(
@@ -106,6 +110,58 @@ class DashboardServiceHardeningTests(unittest.TestCase):
         self.assertIsInstance(prompt, str)
         self.assertIn("2026-03-11", prompt)
         self.assertIn("Short Run", prompt)
+
+    def test_range_changes_the_trailing_baseline_reference_window(self):
+        def row(day: str, hrv: int, stored_baseline: int) -> dict:
+            return {
+                "date": day,
+                "data": {
+                    "date": day,
+                    "morning": {
+                        "hrv": hrv,
+                        "resting_hr": 50,
+                        "sleep_h": 7.0,
+                        "respiration": 14.0,
+                    },
+                    "readiness": {
+                        "score": 70,
+                        "baselines": {
+                            "hrv": {"baseline": stored_baseline},
+                            "resting_hr": {"baseline": 50},
+                            "sleep_h": {"baseline": 7.0},
+                            "respiration": {"baseline": 14.0},
+                        },
+                    },
+                    "summary": {"training_load_sum": 20},
+                    "load_metrics": {
+                        "load_7d": 120,
+                        "load_28d": 420,
+                        "load_7d_daily_avg": 17.1,
+                        "load_28d_daily_avg": 15.0,
+                        "load_ratio": 1.14,
+                    },
+                    "activities": [],
+                },
+            }
+
+        rows = [
+            row("2026-03-01", 40, 32),
+            row("2026-03-02", 50, 32),
+            row("2026-03-03", 60, 32),
+            row("2026-03-04", 70, 32),
+            row("2026-03-05", 80, 32),
+            row("2026-03-06", 90, 32),
+        ]
+
+        payload_4d = build_dashboard_payload(rows, selected_date="2026-03-06", period_days=4)
+        payload_5d = build_dashboard_payload(rows, selected_date="2026-03-06", period_days=5)
+
+        self.assertEqual(payload_4d["baseline"]["hrv"], 65.0)
+        self.assertEqual(payload_5d["baseline"]["hrv"], 60.0)
+        self.assertEqual(payload_4d["reference"]["baselineSource"], "rolling")
+        self.assertEqual(payload_5d["reference"]["baselineSource"], "rolling")
+        self.assertEqual(payload_4d["history"]["rows"][0]["date"], "2026-03-03")
+        self.assertEqual(payload_5d["history"]["rows"][0]["date"], "2026-03-02")
 
 
 if __name__ == "__main__":

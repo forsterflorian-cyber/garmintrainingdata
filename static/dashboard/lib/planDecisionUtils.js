@@ -10,43 +10,44 @@ const SESSION_INTENSITY_RANK = Object.freeze({
   vo2: 4,
 });
 
-export function compareCompletedSessionToDecision(sessionType, decision = {}) {
+export function compareCompletedSessionToDecision(sessionType, decision = {}, options = {}) {
   const sessionCategory = sessionCategoryForType(sessionType) || sessionType || null;
   const sessionRank = intensityRank(sessionCategory);
   const policy = recommendationPolicy(decision);
+  const sessionSportTag = typeof options?.sportTag === "string" ? options.sportTag : null;
 
   if (sessionRank === null || !policy) {
     return null;
   }
   if (policy.alignedRanks.includes(sessionRank)) {
-    return {
+    return withFocusDetail({
       label: "Aligned with today's recommendation",
       tone: "positive",
-    };
+    }, decision, sessionSportTag);
   }
   if (sessionRank > policy.allowedMaxRank) {
     const exceeded = sessionRank - policy.allowedMaxRank > 1 || (sessionRank >= 3 && policy.allowedMaxRank <= 1);
-    return {
+    return withFocusDetail({
       label: exceeded ? "Exceeded today's suggested limit" : "Slightly above recommended intensity",
       tone: exceeded ? "critical" : "warning",
-    };
+    }, decision, sessionSportTag);
   }
   if (sessionRank > policy.targetRank) {
-    return {
+    return withFocusDetail({
       label: "Slightly above recommended intensity",
       tone: "warning",
-    };
+    }, decision, sessionSportTag);
   }
   if (sessionRank < policy.minRecommendedRank) {
-    return {
+    return withFocusDetail({
       label: "Below recommended training load",
       tone: "neutral",
-    };
+    }, decision, sessionSportTag);
   }
-  return {
+  return withFocusDetail({
     label: "Aligned with today's recommendation",
     tone: "positive",
-  };
+  }, decision, sessionSportTag);
 }
 
 export function buildForecastContextCopy(session, { forecastInputMode = "preview" } = {}) {
@@ -120,4 +121,42 @@ function compactSessionCopy(session = {}) {
 
 function intensityRank(category) {
   return Number.isFinite(SESSION_INTENSITY_RANK[category]) ? SESSION_INTENSITY_RANK[category] : null;
+}
+
+
+function withFocusDetail(comparison, decision, sessionSportTag) {
+  const preferredSportTag = preferredSportTagFromDecision(decision);
+  if (!preferredSportTag || !sessionSportTag || preferredSportTag === "hybrid" || preferredSportTag === "recovery") {
+    return comparison;
+  }
+  if (sessionSportTag === preferredSportTag) {
+    return {
+      ...comparison,
+      detail: `${focusLabel(preferredSportTag)} focus matched this session.`,
+    };
+  }
+  return {
+    ...comparison,
+    detail: `${focusLabel(preferredSportTag)} focus had priority today.`,
+  };
+}
+
+
+function preferredSportTagFromDecision(decision = {}) {
+  if (decision?.bestOptions?.[0]?.sportTag) {
+    return decision.bestOptions[0].sportTag;
+  }
+  if (["run", "bike", "strength"].includes(decision?.mode)) {
+    return decision.mode;
+  }
+  return null;
+}
+
+
+function focusLabel(sportTag) {
+  return {
+    run: "Run",
+    bike: "Bike",
+    strength: "Strength",
+  }[sportTag] || "Mode";
 }

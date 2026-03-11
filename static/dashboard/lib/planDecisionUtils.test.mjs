@@ -44,3 +44,15 @@ test("forecast context prefers completed session title and duration", () => {
 
   assert.equal(copy, "Based on today's Easy Ride / 29 min");
 });
+
+test("aligned comparison can include mode-priority detail", () => {
+  const comparison = compareCompletedSessionToDecision("moderate", {
+    primaryRecommendation: "Moderate only",
+    bestOptions: [{ sportTag: "run" }],
+  }, {
+    sportTag: "bike",
+  });
+
+  assert.equal(comparison.label, "Aligned with today's recommendation");
+  assert.equal(comparison.detail, "Run focus had priority today.");
+});

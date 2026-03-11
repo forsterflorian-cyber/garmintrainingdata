@@ -87,6 +87,25 @@ class SyncDecisionTests(unittest.TestCase):
         self.assertFalse(decision["should_start"])
         self.assertEqual("fresh_no_action", decision["reason"])
 
+    def test_never_synced_accounts_start_initial_backfill(self):
+        status = self._status(last_success_hours_ago=None)
+        needs = self._needs(missing_days=180, missing_recent_day=True, has_credentials=True)
+
+        decision = decide_sync_action(
+            status,
+            self.now,
+            needs,
+            trigger_source="auto",
+            requested_mode="auto",
+            policy=self.policy,
+        )
+        response = build_sync_status_response(status, needs, now=self.now, policy=self.policy)
+
+        self.assertTrue(decision["should_start"])
+        self.assertEqual("backfill", decision["mode"])
+        self.assertEqual("initial_backfill", decision["reason"])
+        self.assertEqual(response["autoSyncMode"], "backfill")
+
     def test_missing_credentials_blocks_auto_sync(self):
         status = self._status(last_success_hours_ago=None)
         needs = self._needs(missing_days=28, missing_recent_day=True, has_credentials=False)
