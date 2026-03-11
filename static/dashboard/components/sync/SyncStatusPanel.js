@@ -1,5 +1,5 @@
 import { el, formatDateTime, formatRelativeHours, safeHtml, safeText } from "../../lib/formatters.js";
-import { syncLabelForState, syncToneForState } from "./SyncStatusBadge.js";
+import { getSyncUiCopy, syncLabelForState, syncReasonLabel } from "./syncStatusCopy.js";
 
 export function renderSyncStatusPanel(sync, targetId = "syncStatusPanel") {
   const target = el(targetId);
@@ -13,14 +13,19 @@ export function renderSyncStatusPanel(sync, targetId = "syncStatusPanel") {
   }
 
   const state = safeText(sync.syncState);
-  const reason = syncReasonLabel(sync.statusReason);
+  const display = getSyncUiCopy(sync);
+  const reason = display.reasonLabel;
   const backfillLine = sync.backfillRecommended
     ? '<div class="sync-row"><span>Backfill</span><strong>Recommended</strong></div>'
     : "";
   const cooldownLine = sync.cooldownUntil
     ? `<div class="sync-row"><span>Cooldown</span><strong>${safeHtml(formatDateTime(sync.cooldownUntil))}</strong></div>`
     : "";
-  const errorLine = sync.lastErrorMessage
+  const messageLines = [display.detail, ...display.advisoryLines]
+    .filter(Boolean)
+    .map((message) => `<p class="sync-message">${safeHtml(message)}</p>`)
+    .join("");
+  const errorLine = sync.lastErrorMessage && !display.suppressLastError
     ? `<p class="sync-message is-critical">${safeHtml(sync.lastErrorMessage)}</p>`
     : "";
   const debugLine = sync.debug
@@ -28,14 +33,15 @@ export function renderSyncStatusPanel(sync, targetId = "syncStatusPanel") {
     : "";
 
   target.innerHTML = `
-    <article class="sync-panel" data-tone="${safeHtml(syncToneForState(state))}">
+    <article class="sync-panel" data-tone="${safeHtml(display.tone)}">
       <div class="sync-panel-head">
         <span class="eyebrow">Sync</span>
-        <strong>${safeHtml(syncLabelForState(state))}</strong>
+        <strong>${safeHtml(display.headline || syncLabelForState(state))}</strong>
       </div>
+      ${messageLines}
       <div class="sync-row"><span>Last Success</span><strong>${safeHtml(formatRelativeHours(sync.lastSuccessfulSyncAt))}</strong></div>
       <div class="sync-row"><span>Updated</span><strong>${safeHtml(formatDateTime(sync.lastFinishedSyncAt || sync.lastSuccessfulSyncAt))}</strong></div>
-      <div class="sync-row"><span>Reason</span><strong>${safeHtml(reason)}</strong></div>
+      <div class="sync-row"><span>Status</span><strong>${safeHtml(reason)}</strong></div>
       ${sync.missingDaysCount ? `<div class="sync-row"><span>Missing Days</span><strong>${safeHtml(String(sync.missingDaysCount))}</strong></div>` : ""}
       ${backfillLine}
       ${cooldownLine}
@@ -45,27 +51,4 @@ export function renderSyncStatusPanel(sync, targetId = "syncStatusPanel") {
   `;
 }
 
-export function syncReasonLabel(reason) {
-  return {
-    already_running: "Syncing",
-    auto_sync_disabled: "Paused",
-    blocked: "Blocked",
-    completed: "Success",
-    credentials_invalid: "Reconnect Garmin",
-    credentials_missing: "Reconnect Garmin",
-    credentials_updated: "Ready",
-    cooldown_active: "Retry Later",
-    fresh_no_action: "Fresh",
-    gap_detected: "Backfill",
-    garmin_invalid_credentials: "Reconnect Garmin",
-    garmin_temporary_error: "Retry",
-    manual_request: "Update",
-    missing_recent_day: "Update",
-    never_synced: "Never Synced",
-    partial_success: "Partial Success",
-    stale_data: "Stale",
-    sync_error: "Error",
-    sync_configuration_invalid: "Blocked",
-    sync_unknown_error: "Error",
-  }[reason] || safeText(reason);
-}
+export { syncReasonLabel };

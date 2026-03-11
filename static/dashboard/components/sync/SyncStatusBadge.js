@@ -1,4 +1,5 @@
 import { el, safeHtml, safeText } from "../../lib/formatters.js";
+import { getSyncUiCopy, syncLabelForState } from "./syncStatusCopy.js";
 
 export function renderSyncStatusBadge(sync, targetId = "syncStatusBadge") {
   const target = el(targetId);
@@ -6,51 +7,21 @@ export function renderSyncStatusBadge(sync, targetId = "syncStatusBadge") {
     return;
   }
 
-  const state = safeText(sync?.syncState, "unknown");
+  const display = getSyncUiCopy(sync);
   target.innerHTML = `
-    <article class="sync-badge" data-tone="${safeHtml(syncToneForState(state))}">
-      <strong>${safeHtml(syncBadgeText(state))}</strong>
+    <article class="sync-badge" data-tone="${safeHtml(display.tone)}">
+      <strong>${safeHtml(syncBadgeText(sync, display))}</strong>
     </article>
   `;
 }
 
-export function syncLabelForState(state) {
-  return {
-    never_synced: "Never Synced",
-    fresh: "Fresh",
-    stale: "Stale",
-    syncing: "Syncing",
-    backfilling: "Backfilling",
-    success: "Success",
-    partial_success: "Partial Success",
-    error: "Error",
-    blocked: "Blocked",
-    unknown: "Unknown",
-  }[state] || state;
-}
-
-export function syncToneForState(state) {
-  if (state === "fresh" || state === "success") {
-    return "positive";
+function syncBadgeText(sync, display) {
+  const state = safeText(sync?.syncState, "unknown");
+  if (state === "syncing" || state === "backfilling") {
+    return "Sync in progress";
   }
-  if (state === "syncing" || state === "backfilling" || state === "stale" || state === "partial_success") {
-    return "warning";
-  }
-  if (state === "blocked" || state === "error") {
-    return "critical";
-  }
-  return "neutral";
-}
-
-function syncBadgeText(state) {
-  if (state === "syncing") {
-    return "Syncing...";
-  }
-  if (state === "backfilling") {
-    return "Backfilling...";
-  }
-  if (state === "error") {
-    return "Sync Error";
+  if (display.headline !== syncLabelForState(state)) {
+    return display.headline;
   }
   return `Sync: ${syncLabelForState(state)}`;
 }

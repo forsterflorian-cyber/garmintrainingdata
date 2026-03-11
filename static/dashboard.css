@@ -1510,6 +1510,10 @@ th {
   color: var(--danger);
 }
 
+.sync-message {
+  margin: 0;
+}
+
 .sync-debug,
 .debug-line {
   font-family: "IBM Plex Mono", monospace;

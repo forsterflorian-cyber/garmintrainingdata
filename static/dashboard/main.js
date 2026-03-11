@@ -10,8 +10,9 @@ import { renderBaselineComparisonCard } from "./components/metrics/BaselineCompa
 import { renderLoadTrendCard } from "./components/trends/LoadTrendCard.js";
 import { renderReadinessTrendCard } from "./components/trends/ReadinessTrendCard.js";
 import { renderSyncActionButtons } from "./components/sync/SyncActionButtons.js";
-import { renderSyncStatusBadge, syncLabelForState } from "./components/sync/SyncStatusBadge.js";
-import { renderSyncStatusPanel, syncReasonLabel } from "./components/sync/SyncStatusPanel.js";
+import { renderSyncStatusBadge } from "./components/sync/SyncStatusBadge.js";
+import { getSyncUiCopy, syncReasonLabel } from "./components/sync/syncStatusCopy.js";
+import { renderSyncStatusPanel } from "./components/sync/SyncStatusPanel.js";
 import { clearPlannedSessionsForUser, getPlannedSession, setPlannedSession } from "./lib/forecastUtils.js";
 import { el, formatDateTime, formatNumber, formatRelativeHours, safeHtml, safeText } from "./lib/formatters.js";
 import { computeNextDaysOutlook } from "./lib/outlookForecast.js";
@@ -806,7 +807,12 @@ function syncStatusSummary(sync) {
   if (!sync?.syncState) {
     return "No Sync Data Yet.";
   }
-  if (sync.lastErrorMessage) {
+  const display = getSyncUiCopy(sync);
+  const summaryLines = [display.summaryText, display.detail, ...display.advisoryLines].filter(Boolean);
+  if (summaryLines.length) {
+    return summaryLines.join(". ");
+  }
+  if (sync.lastErrorMessage && !display.suppressLastError) {
     return sync.lastErrorMessage;
   }
   if (sync.lastSuccessfulSyncAt) {
@@ -815,7 +821,7 @@ function syncStatusSummary(sync) {
   if (sync.syncState === "never_synced") {
     return "No Successful Sync Yet.";
   }
-  return sync.statusReason ? syncReasonLabel(sync.statusReason) : "No Sync Detail.";
+  return sync.statusReason ? display.reasonLabel || syncReasonLabel(sync.statusReason) : "No Sync Detail.";
 }
 
 function renderSyncUi(sync = state.syncStatus) {
@@ -830,7 +836,7 @@ function renderSyncUi(sync = state.syncStatus) {
   }
 
   if (el("snapshotSyncStatus")) {
-    el("snapshotSyncStatus").textContent = safeText(syncLabelForState(sync?.syncState || "unknown"));
+    el("snapshotSyncStatus").textContent = safeText(getSyncUiCopy(sync || {}).headline);
   }
   if (el("snapshotSyncMeta")) {
     el("snapshotSyncMeta").textContent = syncStatusSummary(sync);
@@ -1409,8 +1415,15 @@ function planSyncMeta(sync) {
   if (!sync?.syncState) {
     return "No Sync Data Yet.";
   }
+  const display = getSyncUiCopy(sync);
   if (sync.syncState === "syncing" || sync.syncState === "backfilling") {
-    return "Sync In Progress";
+    return display.metaText || "Sync In Progress";
+  }
+  if (display.metaText) {
+    return display.metaText;
+  }
+  if (display.advisoryLines.length) {
+    return display.advisoryLines[0];
   }
   const updatedAt = sync.lastFinishedSyncAt || sync.lastSuccessfulSyncAt;
   if (updatedAt) {
@@ -1425,7 +1438,7 @@ function planSyncMeta(sync) {
   if (sync.syncState === "error") {
     return "Check Sync Surface";
   }
-  return syncReasonLabel(sync.statusReason);
+  return display.reasonLabel || syncReasonLabel(sync.statusReason);
 }
 
 function bindSyncActionButtons() {
