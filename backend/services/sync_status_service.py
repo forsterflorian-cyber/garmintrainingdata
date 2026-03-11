@@ -53,6 +53,7 @@ class SyncStatusService:
         return response.data[0]
 
     def update_status(self, user_id: str, fields: Dict[str, Any]) -> Dict[str, Any]:
+        self.ensure_status(user_id)
         payload = {**fields, "updated_at": utc_now_iso()}
         response = (
             self._supabase.table(SYNC_STATUS_TABLE)

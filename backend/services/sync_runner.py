@@ -344,7 +344,7 @@ class SyncRunner:
             user_id,
             limit=TRAINING_CONFIG.windows.dashboard_history_limit,
         )
-        last_synced_day = rows[-1].get("date") if rows else None
+        last_synced_day = self._latest_valid_row_day(rows)
         return self._status_service.update_status(
             user_id,
             {
@@ -362,12 +362,13 @@ class SyncRunner:
             limit=TRAINING_CONFIG.windows.dashboard_history_limit,
         )
         account = self._store.fetch_account(user_id)
-        latest_data_day = rows[-1].get("date") if rows else None
+        latest_data_day = self._latest_valid_row_day(rows)
         missing_days_count = self._missing_days_count_from_rows(rows)
         missing_recent_day = True
         if latest_data_day:
-            latest = datetime.strptime(latest_data_day, "%Y-%m-%d").date()
-            missing_recent_day = (date.today() - latest).days > 1
+            latest = self._parse_iso_day(latest_data_day)
+            if latest is not None:
+                missing_recent_day = (date.today() - latest).days > 1
         return {
             "latestDataDay": latest_data_day,
             "missingDaysCount": missing_days_count,
@@ -385,7 +386,7 @@ class SyncRunner:
 
     @staticmethod
     def _missing_days_count_from_rows(rows: List[Dict[str, Any]], window_days: int = 28) -> int:
-        day_set = {row.get("date") for row in rows if row.get("date")}
+        day_set = SyncRunner._valid_row_days(rows)
         today_value = date.today()
         missing = 0
         for offset in range(window_days):
@@ -396,7 +397,7 @@ class SyncRunner:
 
     @staticmethod
     def _missing_day_values(rows: List[Dict[str, Any]], *, window_days: int) -> List[str]:
-        day_set = {row.get("date") for row in rows if row.get("date")}
+        day_set = SyncRunner._valid_row_days(rows)
         today_value = date.today()
         missing_days: List[str] = []
         for offset in range(window_days - 1, -1, -1):
@@ -408,6 +409,41 @@ class SyncRunner:
     @staticmethod
     def _stale_score(missing_days_count: int) -> int:
         return min(100, missing_days_count * 5)
+
+    @staticmethod
+    def _latest_valid_row_day(rows: List[Dict[str, Any]]) -> Optional[str]:
+        for row in reversed(rows):
+            if not isinstance(row, dict):
+                continue
+            day = SyncRunner._normalized_iso_day(row.get("date"))
+            if day is not None:
+                return day
+        return None
+
+    @staticmethod
+    def _valid_row_days(rows: List[Dict[str, Any]]) -> set[str]:
+        days: set[str] = set()
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            day = SyncRunner._normalized_iso_day(row.get("date"))
+            if day is not None:
+                days.add(day)
+        return days
+
+    @staticmethod
+    def _normalized_iso_day(value: Any) -> Optional[str]:
+        parsed = SyncRunner._parse_iso_day(value)
+        return parsed.isoformat() if parsed is not None else None
+
+    @staticmethod
+    def _parse_iso_day(value: Any):
+        if not isinstance(value, str):
+            return None
+        try:
+            return datetime.strptime(value, "%Y-%m-%d").date()
+        except ValueError:
+            return None
 
     def _safe_mark_account_sync_state(
         self,

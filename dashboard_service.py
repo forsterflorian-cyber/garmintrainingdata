@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -41,13 +42,12 @@ def fetch_training_rows(supabase: Any, user_id: str, *, limit: int = 0) -> List[
 def history_from_rows(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     history: Dict[str, Any] = {"days": {}}
     for row in rows:
-        payload = row.get("data") or {}
-        day = payload.get("date") or row.get("date")
-        if not day:
+        payload = _normalized_row_payload(row)
+        if not payload:
             continue
-        history["days"][day] = {
-            "morning": payload.get("morning"),
-            "summary": payload.get("summary") or {},
+        history["days"][payload["date"]] = {
+            "morning": _dict_or_none(payload.get("morning")),
+            "summary": _dict_or_empty(payload.get("summary")),
         }
     return history
 
@@ -68,13 +68,22 @@ def upsert_training_payload(supabase: Any, user_id: str, payload: Dict[str, Any]
 
 
 def payload_for_date(rows: List[Dict[str, Any]], selected_date: Optional[str]) -> Optional[Dict[str, Any]]:
+    latest_payload: Optional[Dict[str, Any]] = None
     if selected_date:
         for row in rows:
-            payload = row.get("data") or {}
-            row_date = payload.get("date") or row.get("date")
-            if row_date == selected_date:
+            payload = _normalized_row_payload(row)
+            if not payload:
+                continue
+            latest_payload = payload
+            if payload["date"] == selected_date:
                 return payload
-    return rows[-1].get("data") if rows else None
+        return latest_payload
+
+    for row in rows:
+        payload = _normalized_row_payload(row)
+        if payload:
+            latest_payload = payload
+    return latest_payload
 
 
 def build_series(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -105,17 +114,18 @@ def build_series(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 def build_prompt_from_payload(payload: Optional[Dict[str, Any]], mode: str) -> str:
-    if not payload:
+    if not isinstance(payload, dict) or not payload:
         return "No Data Available."
 
     mode = mode_or_default(mode)
     recommendation_day = payload.get("recommendation_day") or payload.get("date")
-    morning = payload.get("morning")
-    summary = payload.get("summary") or {}
-    load_metrics = payload.get("load_metrics") or {}
-    activities = [ActivitySummary(**activity) for activity in (payload.get("activities") or [])]
-    recommendations = payload.get("recommendations") or {}
-    units = (payload.get("units") or {}).get(mode) or (payload.get("units") or {}).get("hybrid", [])
+    morning = _dict_or_none(payload.get("morning"))
+    summary = _dict_or_empty(payload.get("summary"))
+    load_metrics = _dict_or_empty(payload.get("load_metrics"))
+    activities = [_activity_summary(activity) for activity in _sanitized_activities(payload.get("activities"))]
+    recommendations = _dict_or_empty(payload.get("recommendations"))
+    units_payload = _dict_or_empty(payload.get("units"))
+    units = units_payload.get(mode) or units_payload.get("hybrid", [])
 
     return report_build_ai_prompt(
         mode=mode,
@@ -235,8 +245,8 @@ def build_dashboard_payload(
 def build_day_items(rows: List[Dict[str, Any]], *, mode: str) -> List[Dict[str, Any]]:
     items: List[Dict[str, Any]] = []
     for row in rows:
-        payload = row.get("data") or {}
-        if not payload.get("date"):
+        payload = _normalized_row_payload(row)
+        if not payload:
             continue
         item = payload_to_day_item(payload, mode=mode)
         item["sessionType"] = classify_day_intensity(item)
@@ -261,13 +271,16 @@ def build_day_items(rows: List[Dict[str, Any]], *, mode: str) -> List[Dict[str, 
 
 
 def payload_to_day_item(payload: Dict[str, Any], *, mode: str) -> Dict[str, Any]:
-    morning = payload.get("morning") or {}
-    summary = payload.get("summary") or {}
-    load_metrics = payload.get("load_metrics") or {}
-    readiness = payload.get("readiness") or {}
+    morning = _dict_or_empty(payload.get("morning"))
+    summary = _dict_or_empty(payload.get("summary"))
+    load_metrics = _dict_or_empty(payload.get("load_metrics"))
+    readiness = _dict_or_empty(payload.get("readiness"))
     today = build_today_metrics(morning, readiness.get("score"))
     baseline = build_baseline_metrics_snapshot(readiness)
     comparisons = build_comparisons(today, baseline)
+    activities = _sanitized_activities(payload.get("activities"))
+    legacy_recommendations = _dict_or_empty(payload.get("recommendations"))
+    legacy_units = _dict_or_empty(payload.get("units"))
 
     return {
         "date": payload.get("date"),
@@ -278,10 +291,10 @@ def payload_to_day_item(payload: Dict[str, Any], *, mode: str) -> Dict[str, Any]
         "comparisons": comparisons,
         "baselineBars": build_metric_delta_bars(today, baseline),
         "recommendationDay": payload.get("recommendation_day") or payload.get("date"),
-        "activities": payload.get("activities") or [],
-        "legacyRecommendations": payload.get("recommendations") or {},
-        "legacyUnits": payload.get("units") or {},
-        "aiPrompt": payload.get("ai_prompt"),
+        "activities": activities,
+        "legacyRecommendations": legacy_recommendations,
+        "legacyUnits": legacy_units,
+        "aiPrompt": payload.get("ai_prompt") if isinstance(payload.get("ai_prompt"), str) else None,
         "loadDay": _safe_number(summary.get("training_load_sum")) or 0.0,
         "acute7d": _safe_number(load_metrics.get("load_7d")),
         "chronic28d": _safe_number(load_metrics.get("load_28d")),
@@ -306,7 +319,7 @@ def filter_period_items(day_items: List[Dict[str, Any]], focus_date: str, period
     return [
         item
         for item in day_items
-        if _date_distance(item["date"], focus_date) < period_days
+        if (distance := _date_distance(item["date"], focus_date)) is not None and distance < period_days
     ]
 
 
@@ -320,13 +333,144 @@ def build_summary(day_items: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
-def _date_distance(day: str, focus_day: str) -> int:
-    day_value = datetime.strptime(day, "%Y-%m-%d").date()
-    focus_value = datetime.strptime(focus_day, "%Y-%m-%d").date()
+def _date_distance(day: str, focus_day: str) -> Optional[int]:
+    day_value = _parse_iso_day(day)
+    focus_value = _parse_iso_day(focus_day)
+    if day_value is None or focus_value is None:
+        return None
     return abs((focus_value - day_value).days)
 
 
 def _safe_number(value: Any) -> Optional[float]:
     if isinstance(value, (int, float)):
-        return float(value)
+        number = float(value)
+    elif isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return None
+        try:
+            number = float(stripped)
+        except ValueError:
+            return None
+    else:
+        return None
+    if not math.isfinite(number):
+        return None
+    return number
+
+
+def _dict_or_empty(value: Any) -> Dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _dict_or_none(value: Any) -> Optional[Dict[str, Any]]:
+    return value if isinstance(value, dict) else None
+
+
+def _normalized_row_payload(row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    if not isinstance(row, dict):
+        return None
+    payload = row.get("data")
+    if not isinstance(payload, dict):
+        return None
+    normalized_date = _normalized_iso_day(payload.get("date") or row.get("date"))
+    if normalized_date is None:
+        return None
+    return {**payload, "date": normalized_date}
+
+
+def _sanitized_activities(value: Any) -> List[Dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+
+    activities: List[Dict[str, Any]] = []
+    for item in value:
+        activity = _sanitized_activity(item)
+        if activity is not None:
+            activities.append(activity)
+    return activities
+
+
+def _sanitized_activity(value: Any) -> Optional[Dict[str, Any]]:
+    if not isinstance(value, dict):
+        return None
+
+    type_key = _string_or_default(value.get("type_key"), "unknown")
+    name = _string_or_default(value.get("name"), type_key)
+    return {
+        "activity_id": _safe_int(value.get("activity_id")),
+        "start_local": _string_or_default(value.get("start_local"), ""),
+        "date_local": _string_or_default(value.get("date_local"), ""),
+        "type_key": type_key,
+        "name": name,
+        "duration_min": _safe_number(value.get("duration_min")),
+        "distance_km": _safe_number(value.get("distance_km")),
+        "avg_hr": _safe_number(value.get("avg_hr")),
+        "max_hr": _safe_number(value.get("max_hr")),
+        "avg_power": _safe_number(value.get("avg_power")),
+        "max_power": _safe_number(value.get("max_power")),
+        "avg_speed_kmh": _safe_number(value.get("avg_speed_kmh")),
+        "pace_min_per_km": _string_or_none(value.get("pace_min_per_km")),
+        "aerobic_te": _safe_number(value.get("aerobic_te")),
+        "anaerobic_te": _safe_number(value.get("anaerobic_te")),
+        "training_load": _safe_number(value.get("training_load")),
+    }
+
+
+def _activity_summary(activity: Dict[str, Any]) -> ActivitySummary:
+    return ActivitySummary(
+        activity_id=activity.get("activity_id"),
+        start_local=activity["start_local"],
+        date_local=activity["date_local"],
+        type_key=activity["type_key"],
+        name=activity["name"],
+        duration_min=activity.get("duration_min"),
+        distance_km=activity.get("distance_km"),
+        avg_hr=activity.get("avg_hr"),
+        max_hr=activity.get("max_hr"),
+        avg_power=activity.get("avg_power"),
+        max_power=activity.get("max_power"),
+        avg_speed_kmh=activity.get("avg_speed_kmh"),
+        pace_min_per_km=activity.get("pace_min_per_km"),
+        aerobic_te=activity.get("aerobic_te"),
+        anaerobic_te=activity.get("anaerobic_te"),
+        training_load=activity.get("training_load"),
+    )
+
+
+def _normalized_iso_day(value: Any) -> Optional[str]:
+    parsed = _parse_iso_day(value)
+    return parsed.isoformat() if parsed is not None else None
+
+
+def _parse_iso_day(value: Any):
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def _safe_int(value: Any) -> Optional[int]:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.isdigit():
+            return int(stripped)
+    return None
+
+
+def _string_or_default(value: Any, default: str) -> str:
+    if isinstance(value, str):
+        return value
+    return default
+
+
+def _string_or_none(value: Any) -> Optional[str]:
+    if isinstance(value, str):
+        return value
     return None

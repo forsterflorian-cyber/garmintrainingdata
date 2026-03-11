@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -55,7 +56,8 @@ def count_quality_days(focus_date: str, day_items: List[Dict[str, Any]], *, days
         date_value = item.get("date")
         if not isinstance(date_value, str) or date_value >= focus_date:
             continue
-        if _date_distance(date_value, focus_date) > days:
+        distance = _date_distance(date_value, focus_date)
+        if distance is None or distance > days:
             continue
         if item.get("sessionType") in QUALITY_DAY_TYPES:
             total += 1
@@ -64,40 +66,69 @@ def count_quality_days(focus_date: str, day_items: List[Dict[str, Any]], *, days
 
 def previous_day_item(focus_item: Dict[str, Any], day_items: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     focus_date = focus_item["date"]
-    previous_items = [
-        item
-        for item in day_items
-        if isinstance(item.get("date"), str) and item["date"] < focus_date and _date_distance(item["date"], focus_date) == 1
-    ]
+    previous_items: List[Dict[str, Any]] = []
+    for item in day_items:
+        date_value = item.get("date")
+        if not isinstance(date_value, str) or date_value >= focus_date:
+            continue
+        if _date_distance(date_value, focus_date) == 1:
+            previous_items.append(item)
     if not previous_items:
         return None
     previous_items.sort(key=lambda item: item["date"])
     return previous_items[-1]
 
 
-def _date_distance(day: str, focus_day: str) -> int:
-    day_value = datetime.strptime(day, "%Y-%m-%d").date()
-    focus_value = datetime.strptime(focus_day, "%Y-%m-%d").date()
+def _date_distance(day: str, focus_day: str) -> Optional[int]:
+    day_value = _parse_iso_day(day)
+    focus_value = _parse_iso_day(focus_day)
+    if day_value is None or focus_value is None:
+        return None
     return (focus_value - day_value).days
 
 
 def _is_threshold_activity(activity: Dict[str, Any]) -> bool:
+    if not isinstance(activity, dict):
+        return False
     return (
-        float(activity.get("aerobic_te") or 0.0) >= 2.8
-        or float(activity.get("anaerobic_te") or 0.0) >= 0.7
-        or float(activity.get("training_load") or 0.0) >= 70.0
+        (_safe_number(activity.get("aerobic_te")) or 0.0) >= 2.8
+        or (_safe_number(activity.get("anaerobic_te")) or 0.0) >= 0.7
+        or (_safe_number(activity.get("training_load")) or 0.0) >= 70.0
     )
 
 
 def _is_vo2_activity(activity: Dict[str, Any]) -> bool:
+    if not isinstance(activity, dict):
+        return False
     return (
-        float(activity.get("aerobic_te") or 0.0) >= 4.0
-        or float(activity.get("anaerobic_te") or 0.0) >= 1.4
-        or float(activity.get("training_load") or 0.0) >= 100.0
+        (_safe_number(activity.get("aerobic_te")) or 0.0) >= 4.0
+        or (_safe_number(activity.get("anaerobic_te")) or 0.0) >= 1.4
+        or (_safe_number(activity.get("training_load")) or 0.0) >= 100.0
     )
 
 
 def _safe_number(value: Any) -> Optional[float]:
     if isinstance(value, (int, float)):
-        return float(value)
-    return None
+        number = float(value)
+    elif isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return None
+        try:
+            number = float(stripped)
+        except ValueError:
+            return None
+    else:
+        return None
+    if not math.isfinite(number):
+        return None
+    return number
+
+
+def _parse_iso_day(value: Any):
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError:
+        return None

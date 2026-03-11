@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from flask import Flask, jsonify, render_template, request
 
@@ -288,4 +288,4 @@ def connect_garmin():
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=DEBUG_MODE)

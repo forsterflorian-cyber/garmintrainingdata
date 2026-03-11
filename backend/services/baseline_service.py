@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import Any, Dict, List, Optional
 
 
@@ -113,5 +114,17 @@ def _delta_pct(value: Optional[float], baseline: Optional[float]) -> Optional[fl
 
 def _safe_number(value: Any) -> Optional[float]:
     if isinstance(value, (int, float)):
-        return float(value)
-    return None
+        number = float(value)
+    elif isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return None
+        try:
+            number = float(stripped)
+        except ValueError:
+            return None
+    else:
+        return None
+    if not math.isfinite(number):
+        return None
+    return number
