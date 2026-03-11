@@ -17,15 +17,28 @@ export function renderBestOptionsPanel(options, { selectedType = null } = {}) {
       aria-pressed="${option.type === selectedType ? "true" : "false"}"
     >
       <div class="session-card-head">
-        <p class="eyebrow">Option ${index + 1}</p>
+        <div class="session-card-title">
+          <p class="eyebrow">Option ${index + 1}</p>
+          <h4>${safeHtml(option.label)}</h4>
+        </div>
         <span class="session-selection-state">${option.type === selectedType ? "Selected" : "Preview"}</span>
       </div>
-      <h4>${safeHtml(option.label)}</h4>
       <p class="session-details">${safeHtml(option.details)}</p>
-      <div class="session-meta">
-        <span class="session-tag">${safeHtml(option.sportTag)}</span>
-        <span class="session-fatigue">${safeHtml(option.fatigueLevel)} fatigue</span>
+      <div class="session-card-foot">
+        <span class="session-summary-tag">${safeHtml(compactDescriptor(option))}</span>
       </div>
     </button>
   `).join("");
+}
+
+function compactDescriptor(option) {
+  const segments = [option?.sportTag, option?.fatigueLevel]
+    .filter(Boolean)
+    .map((value) => String(value)
+      .split(/[-_\s]+/)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" "));
+
+  return segments.join(" / ") || "Plan option";
 }

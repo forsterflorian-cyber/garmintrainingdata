@@ -12,7 +12,7 @@ import { renderReadinessTrendCard } from "./components/trends/ReadinessTrendCard
 import { renderSyncActionButtons } from "./components/sync/SyncActionButtons.js";
 import { renderSyncStatusBadge, syncLabelForState } from "./components/sync/SyncStatusBadge.js";
 import { renderSyncStatusPanel, syncReasonLabel } from "./components/sync/SyncStatusPanel.js";
-import { getPlannedSession, setPlannedSession } from "./lib/forecastUtils.js";
+import { clearPlannedSessionsForUser, getPlannedSession, setPlannedSession } from "./lib/forecastUtils.js";
 import { el, formatDateTime, formatNumber, formatRelativeHours, safeHtml, safeText } from "./lib/formatters.js";
 import { computeNextDaysOutlook } from "./lib/outlookForecast.js";
 
@@ -21,6 +21,7 @@ const SURFACE_VIEWS = ["plan", "analysis", "sync", "debug"];
 const APP_VIEWS = ["loading", "auth", "garminSetup", "dashboard", "settings", "error"];
 const APP_ROUTE_PATHS = Object.freeze({
   auth: "/auth",
+  authCallback: "/auth/callback",
   garminSetup: "/onboarding/garmin",
   dashboard: "/dashboard",
   settings: "/settings",
@@ -32,8 +33,17 @@ const AUTH_PROVIDERS = Object.freeze({
     label: "Email and password",
     supportedActions: ["login", "signup"],
   },
+  google: {
+    id: "google",
+    kind: "oauth",
+    label: "Google",
+    oauthProvider: "google",
+    supportedActions: ["login"],
+  },
 });
 const ADVANCED_MODE_KEY = "dashboard.advancedMode";
+const AUTH_REDIRECT_PROVIDER_KEY = "dashboard.auth.redirectProvider";
+const ACCOUNT_DELETE_CONFIRMATION_TEXT = "DELETE";
 
 function loadAdvancedModePreference() {
   try {
@@ -60,12 +70,15 @@ const state = {
   syncPollTimer: null,
   syncPollInFlight: false,
   autoSyncKey: null,
+  accountDeletionPending: false,
+  sessionRestorePending: false,
 };
 
 const supabaseClient = window.supabase && APP_CONFIG.supabaseUrl && APP_CONFIG.supabaseAnonKey
   ? window.supabase.createClient(APP_CONFIG.supabaseUrl, APP_CONFIG.supabaseAnonKey, {
       auth: {
         detectSessionInUrl: true,
+        flowType: "pkce",
         persistSession: true,
         autoRefreshToken: true,
       },
@@ -85,7 +98,7 @@ function missingConfigMessage() {
 }
 
 function authCallbackUrl() {
-  return new URL(APP_ROUTE_PATHS.dashboard, window.location.origin).toString();
+  return new URL(APP_ROUTE_PATHS.authCallback, window.location.origin).toString();
 }
 
 function normalizedPathname(pathname = window.location.pathname) {
@@ -95,10 +108,74 @@ function normalizedPathname(pathname = window.location.pathname) {
   return pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
 }
 
+function isAuthCallbackPath(pathname = window.location.pathname) {
+  return normalizedPathname(pathname) === APP_ROUTE_PATHS.authCallback;
+}
+
+function authCallbackParams() {
+  const searchParams = new URLSearchParams(window.location.search);
+  const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  return {
+    code: searchParams.get("code"),
+    tokenHash: searchParams.get("token_hash"),
+    type: searchParams.get("type"),
+    error: searchParams.get("error") || hashParams.get("error") || searchParams.get("error_code") || hashParams.get("error_code"),
+    errorDescription: searchParams.get("error_description") || hashParams.get("error_description"),
+    hasSessionTokens: hashParams.has("access_token") || hashParams.has("refresh_token"),
+  };
+}
+
+function authCallbackPending() {
+  if (!isAuthCallbackPath()) {
+    return false;
+  }
+  const params = authCallbackParams();
+  return Boolean(params.code || params.tokenHash || params.error || params.errorDescription || params.hasSessionTokens);
+}
+
+function persistPendingAuthProvider(providerId) {
+  try {
+    window.sessionStorage.setItem(AUTH_REDIRECT_PROVIDER_KEY, providerId);
+  } catch (_error) {
+    // Ignore session storage failures and continue with a generic auth message.
+  }
+}
+
+function consumePendingAuthProvider() {
+  try {
+    const providerId = window.sessionStorage.getItem(AUTH_REDIRECT_PROVIDER_KEY);
+    window.sessionStorage.removeItem(AUTH_REDIRECT_PROVIDER_KEY);
+    return providerId || null;
+  } catch (_error) {
+    return null;
+  }
+}
+
+function clearPendingAuthProvider() {
+  try {
+    window.sessionStorage.removeItem(AUTH_REDIRECT_PROVIDER_KEY);
+  } catch (_error) {
+    // Ignore session storage failures during auth cleanup.
+  }
+}
+
+function callbackFailureMessage(detail = null) {
+  const providerId = consumePendingAuthProvider();
+  const flowLabel = providerId === "google" ? "Google sign-in" : "Authentication";
+  const cleanedDetail = String(detail || "").trim();
+  if (!cleanedDetail) {
+    return `${flowLabel} could not be completed. Try again.`;
+  }
+  return `${flowLabel} failed: ${cleanedDetail}`;
+}
+
 function requestedAppViewFromPath() {
   const pathname = normalizedPathname();
   if (pathname === APP_ROUTE_PATHS.auth) {
     return "auth";
+  }
+  if (pathname === APP_ROUTE_PATHS.authCallback) {
+    return null;
   }
   if (pathname === APP_ROUTE_PATHS.garminSetup) {
     return "garminSetup";
@@ -172,10 +249,13 @@ function persistAdvancedModePreference() {
 }
 
 function syncAppLocation({ replaceHistory = false } = {}) {
+  if (state.appView === "loading" && authCallbackPending()) {
+    return;
+  }
   const basePath = routePathForAppView(state.appView);
   const hash = state.appView === "dashboard" && state.activeView !== "plan" ? `#${state.activeView}` : "";
   const nextUrl = `${basePath}${hash}`;
-  const currentUrl = `${window.location.pathname}${window.location.hash}`;
+  const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
   if (currentUrl === nextUrl) {
     return;
   }
@@ -318,6 +398,81 @@ function setAuthUi(user) {
   if (setupAccountEmail) {
     setupAccountEmail.textContent = user?.email ? `Account: ${user.email}` : "Account: -";
   }
+
+  const dangerZoneAccountEmail = el("dangerZoneAccountEmail");
+  if (dangerZoneAccountEmail) {
+    dangerZoneAccountEmail.textContent = user?.email ? `Signed in as ${user.email}` : "Signed in as -";
+  }
+}
+
+function applyCurrentSession(session) {
+  state.currentSession = session || null;
+  const user = state.currentSession?.user || null;
+  setAuthUi(user);
+  setAuthStatus(user ? `Signed in as ${user.email}` : "Not signed in");
+  if (state.currentSession?.access_token) {
+    clearPendingAuthProvider();
+  }
+}
+
+async function completeAuthCallbackIfNeeded() {
+  if (!isAuthCallbackPath()) {
+    return { handled: false, session: null, message: null, missingSessionMessage: null };
+  }
+
+  const params = authCallbackParams();
+  if (params.error || params.errorDescription) {
+    return {
+      handled: true,
+      session: null,
+      message: callbackFailureMessage(params.errorDescription || params.error),
+      missingSessionMessage: null,
+    };
+  }
+
+  if (params.tokenHash && params.type) {
+    const client = requireSupabaseClient();
+    const { data, error } = await client.auth.verifyOtp({
+      token_hash: params.tokenHash,
+      type: params.type,
+    });
+    if (error) {
+      return {
+        handled: true,
+        session: null,
+        message: callbackFailureMessage(error.message),
+        missingSessionMessage: null,
+      };
+    }
+    return {
+      handled: true,
+      session: data?.session || null,
+      message: null,
+      missingSessionMessage: data?.session ? null : "Confirmation completed. Sign in to continue.",
+    };
+  }
+
+  if (!params.code) {
+    return { handled: false, session: null, message: null, missingSessionMessage: null };
+  }
+
+  const client = requireSupabaseClient();
+  const { data, error } = await client.auth.exchangeCodeForSession(params.code);
+  if (error) {
+    return {
+      handled: true,
+      session: null,
+      message: callbackFailureMessage(error.message),
+      missingSessionMessage: null,
+    };
+  }
+
+  return {
+    handled: true,
+    session: data?.session || null,
+    message: null,
+    missingSessionMessage: null,
+  };
 }
 
 function buildApiError(response, payload) {
@@ -389,6 +544,83 @@ function garminCredentialsForContext(context) {
     email: el(emailId)?.value.trim() || "",
     password: el(passwordId)?.value.trim() || "",
   };
+}
+
+function accountDeletionInputValue() {
+  return el("deleteAccountConfirmInput")?.value.trim() || "";
+}
+
+function isAccountDeletionConfirmed() {
+  return accountDeletionInputValue() === ACCOUNT_DELETE_CONFIRMATION_TEXT;
+}
+
+function setAccountDeletionFeedback(message, { tone = "default" } = {}) {
+  const feedback = el("deleteAccountFeedback");
+  if (!feedback) {
+    return;
+  }
+
+  feedback.className = "danger-feedback";
+  if (tone === "error") {
+    feedback.classList.add("is-error");
+  } else if (tone === "success") {
+    feedback.classList.add("is-success");
+  }
+  feedback.textContent = message || "This action cannot be undone.";
+}
+
+function syncAccountDeletionUi() {
+  const launchButton = el("deleteAccountBtn");
+  const confirmPanel = el("deleteAccountConfirmPanel");
+  const input = el("deleteAccountConfirmInput");
+  const confirmButton = el("confirmDeleteAccountBtn");
+  const cancelButton = el("cancelDeleteAccountBtn");
+  const busy = state.accountDeletionPending;
+
+  if (launchButton) {
+    launchButton.disabled = busy;
+  }
+  if (input) {
+    input.disabled = busy;
+  }
+  if (confirmButton) {
+    confirmButton.disabled = busy || !isAccountDeletionConfirmed();
+  }
+  if (cancelButton) {
+    cancelButton.disabled = busy;
+  }
+  if (confirmPanel) {
+    confirmPanel.dataset.busy = busy ? "true" : "false";
+  }
+}
+
+function resetAccountDeletionUi() {
+  state.accountDeletionPending = false;
+  const confirmPanel = el("deleteAccountConfirmPanel");
+  const input = el("deleteAccountConfirmInput");
+  if (confirmPanel) {
+    confirmPanel.hidden = true;
+  }
+  if (input) {
+    input.value = "";
+  }
+  setAccountDeletionFeedback("This action cannot be undone.");
+  syncAccountDeletionUi();
+}
+
+function openAccountDeletionConfirmation() {
+  const confirmPanel = el("deleteAccountConfirmPanel");
+  if (!confirmPanel) {
+    return;
+  }
+  confirmPanel.hidden = false;
+  setAccountDeletionFeedback("This action cannot be undone.");
+  syncAccountDeletionUi();
+  el("deleteAccountConfirmInput")?.focus();
+}
+
+function clearUserLocalState(userId) {
+  clearPlannedSessionsForUser(userId);
 }
 
 function resolveAllowedAppView(preferredView = requestedAppViewFromPath()) {
@@ -923,6 +1155,7 @@ function setLoggedOutState({ authMessage = "Not signed in", garminMessage = "Sig
   state.syncStatus = null;
   state.autoSyncKey = null;
   stopSyncPolling();
+  resetAccountDeletionUi();
   renderDashboard();
   renderSyncStatusPanel({}, "settingsSyncStatusPanel");
   setAuthUi(null);
@@ -939,7 +1172,8 @@ async function handleUnauthorizedSession(message) {
       // Ignore sign-out cleanup errors and still reset the local state.
     }
   }
-  state.currentSession = null;
+  clearPendingAuthProvider();
+  applyCurrentSession(null);
   setLoggedOutState({ authMessage: message, garminMessage: message });
 }
 
@@ -950,8 +1184,20 @@ async function performAuthAction(action, providerId) {
     return;
   }
 
-  if (provider.kind !== "password") {
-    setAuthStatus("This authentication provider is not configured yet.");
+  const client = requireSupabaseClient();
+  if (provider.kind === "oauth") {
+    persistPendingAuthProvider(provider.id);
+    setAuthStatus(`Redirecting to ${provider.label}...`);
+    const { error } = await client.auth.signInWithOAuth({
+      provider: provider.oauthProvider,
+      options: {
+        redirectTo: authCallbackUrl(),
+      },
+    });
+    if (error) {
+      clearPendingAuthProvider();
+      setAuthStatus(error.message);
+    }
     return;
   }
 
@@ -961,7 +1207,6 @@ async function performAuthAction(action, providerId) {
     return;
   }
 
-  const client = requireSupabaseClient();
   if (action === "login") {
     const { error } = await client.auth.signInWithPassword({ email, password });
     if (error) {
@@ -988,8 +1233,61 @@ async function logout() {
   if (supabaseClient) {
     await supabaseClient.auth.signOut();
   }
-  state.currentSession = null;
+  clearPendingAuthProvider();
+  applyCurrentSession(null);
   setLoggedOutState();
+}
+
+async function deleteAccount() {
+  if (!isAccountDeletionConfirmed() || state.accountDeletionPending) {
+    setAccountDeletionFeedback("Type DELETE to confirm account deletion.", { tone: "error" });
+    syncAccountDeletionUi();
+    return;
+  }
+
+  const userId = currentUserId();
+  state.accountDeletionPending = true;
+  setAccountDeletionFeedback("Deleting account...");
+  syncAccountDeletionUi();
+
+  try {
+    const response = await apiPost("/api/account/delete", {
+      confirmationText: accountDeletionInputValue(),
+    });
+
+    clearUserLocalState(userId);
+    if (supabaseClient) {
+      try {
+        await supabaseClient.auth.signOut();
+      } catch (_error) {
+        // Ignore sign-out cleanup failures after the account has already been deleted.
+      }
+    }
+
+    clearPendingAuthProvider();
+    applyCurrentSession(null);
+    setLoggedOutState({
+      authMessage: "Account deleted.",
+      garminMessage: "Account deleted.",
+    });
+
+    const redirectTo = typeof response?.redirectTo === "string" ? response.redirectTo : APP_ROUTE_PATHS.auth;
+    if (normalizedPathname() !== redirectTo) {
+      window.history.replaceState(null, "", redirectTo);
+    }
+  } catch (error) {
+    if (isUnauthorizedError(error)) {
+      await handleUnauthorizedSession("Session expired. Sign in again.");
+      return;
+    }
+
+    state.accountDeletionPending = false;
+    setAccountDeletionFeedback(
+      error?.message || "Account deletion could not be completed. Please try again.",
+      { tone: "error" },
+    );
+    syncAccountDeletionUi();
+  }
 }
 
 async function submitGarminCredentials(context) {
@@ -1033,10 +1331,10 @@ function planSyncMeta(sync) {
   }
   const updatedAt = sync.lastFinishedSyncAt || sync.lastSuccessfulSyncAt;
   if (updatedAt) {
-    return `Last Updated ${formatRelativeHours(updatedAt)}`;
+    return `Updated ${formatRelativeHours(updatedAt)}`;
   }
   if (sync.syncState === "never_synced") {
-    return "Never Synced";
+    return "Never synced";
   }
   if (sync.syncState === "blocked") {
     return "Reconnect Garmin";
@@ -1177,6 +1475,39 @@ function bindEvents() {
     });
   }
 
+  const deleteAccountBtn = el("deleteAccountBtn");
+  if (deleteAccountBtn) {
+    deleteAccountBtn.addEventListener("click", () => {
+      openAccountDeletionConfirmation();
+    });
+  }
+
+  const cancelDeleteAccountBtn = el("cancelDeleteAccountBtn");
+  if (cancelDeleteAccountBtn) {
+    cancelDeleteAccountBtn.addEventListener("click", () => {
+      if (!state.accountDeletionPending) {
+        resetAccountDeletionUi();
+      }
+    });
+  }
+
+  const confirmDeleteAccountBtn = el("confirmDeleteAccountBtn");
+  if (confirmDeleteAccountBtn) {
+    confirmDeleteAccountBtn.addEventListener("click", () => {
+      void deleteAccount();
+    });
+  }
+
+  const deleteAccountConfirmInput = el("deleteAccountConfirmInput");
+  if (deleteAccountConfirmInput) {
+    deleteAccountConfirmInput.addEventListener("input", () => {
+      if (!state.accountDeletionPending) {
+        setAccountDeletionFeedback("This action cannot be undone.");
+        syncAccountDeletionUi();
+      }
+    });
+  }
+
   el("rangeSelect").addEventListener("change", (event) => {
     state.rangeDays = Number(event.target.value);
     void loadDashboard();
@@ -1238,30 +1569,62 @@ async function restoreSession() {
     return;
   }
 
-  const { data } = await supabaseClient.auth.getSession();
-  state.currentSession = data?.session || null;
-  const user = state.currentSession?.user || null;
-  setAuthUi(user);
-  setAuthStatus(user ? `Signed in as ${user.email}` : "Not signed in");
+  state.sessionRestorePending = true;
+  try {
+    const callbackResult = await completeAuthCallbackIfNeeded();
+    if (callbackResult.message) {
+      applyCurrentSession(null);
+      setLoggedOutState({
+        authMessage: callbackResult.message,
+        garminMessage: "Sign in to connect Garmin.",
+      });
+      return;
+    }
 
-  if (state.currentSession?.access_token) {
-    await refreshAppState({
-      requestedView: requestedAppViewFromPath(),
-      replaceHistory: normalizedPathname() === "/",
-      loadDashboardIfNeeded: true,
-    });
-  } else {
+    if (callbackResult.session?.access_token) {
+      applyCurrentSession(callbackResult.session);
+      await refreshAppState({
+        requestedView: requestedAppViewFromPath(),
+        replaceHistory: true,
+        loadDashboardIfNeeded: true,
+      });
+      return;
+    }
+
+    const { data } = await supabaseClient.auth.getSession();
+    applyCurrentSession(data?.session || null);
+
+    if (state.currentSession?.access_token) {
+      await refreshAppState({
+        requestedView: requestedAppViewFromPath(),
+        replaceHistory: normalizedPathname() === "/" || isAuthCallbackPath(),
+        loadDashboardIfNeeded: true,
+      });
+      return;
+    }
+
+    if (isAuthCallbackPath()) {
+      setLoggedOutState({
+        authMessage: callbackResult.missingSessionMessage || callbackFailureMessage(),
+        garminMessage: "Sign in to connect Garmin.",
+      });
+      return;
+    }
+
+    clearPendingAuthProvider();
     setLoggedOutState();
+  } finally {
+    state.sessionRestorePending = false;
   }
 }
 
 if (supabaseClient) {
   supabaseClient.auth.onAuthStateChange((_event, session) => {
-    state.currentSession = session || null;
-    const user = state.currentSession?.user || null;
-    setAuthUi(user);
-    setAuthStatus(user ? `Signed in as ${user.email}` : "Not signed in");
+    applyCurrentSession(session || null);
     window.setTimeout(async () => {
+      if (state.sessionRestorePending) {
+        return;
+      }
       if (state.currentSession?.access_token) {
         await refreshAppState({
           requestedView: requestedAppViewFromPath(),
@@ -1269,6 +1632,7 @@ if (supabaseClient) {
           loadDashboardIfNeeded: true,
         });
       } else {
+        clearPendingAuthProvider();
         setLoggedOutState();
       }
     }, 0);
@@ -1277,6 +1641,7 @@ if (supabaseClient) {
 
 state.activeView = resolveSurfaceView(requestedViewFromHash());
 bindEvents();
+resetAccountDeletionUi();
 syncSurfaceUi({ syncHash: false });
 setAuthUi(null);
 renderDashboard();

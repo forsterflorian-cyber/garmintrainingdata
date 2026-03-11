@@ -8,12 +8,16 @@ export function renderTrainingDecisionCard({ payload }) {
   const targetWindow = payload?.today?.recommendationDay && payload.today.recommendationDay !== payload.date
     ? "Tomorrow"
     : "Today";
+  const focusDay = safeText(payload?.date);
+  const recommendationDay = safeText(targetDay);
   const headline = buildDecisionHeadline(decision.primaryRecommendation);
   const subline = buildDecisionSubline(decision);
   const guidance = buildDecisionGuidance(decision);
 
-  el("decisionTargetDay").textContent = `${targetWindow}: ${safeText(targetDay)}`;
-  el("decisionTargetMeta").textContent = `Focus Day ${safeText(payload?.date)}. Recommendation for ${safeText(targetDay)}.`;
+  el("decisionTargetDay").textContent = `${targetWindow}: ${recommendationDay}`;
+  el("decisionTargetMeta").textContent = payload?.date
+    ? `Focus day ${focusDay} | Recommendation for ${recommendationDay}`
+    : "No focus day loaded.";
   el("decisionLevel").textContent = headline;
   el("decisionScore").textContent = formatNumber(decision.recoveryScore, 2);
   el("decisionReadiness").textContent = formatNumber(payload?.today?.readiness, 0);

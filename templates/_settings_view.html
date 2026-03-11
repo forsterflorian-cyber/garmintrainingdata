@@ -1,54 +1,88 @@
-<section class="surface-intro">
-  <div>
-    <p class="eyebrow">Settings</p>
-    <h2>Account and Garmin management</h2>
-    <p class="muted-copy">
-      Manage account access and Garmin credentials here. Dashboard access stays protected by the setup state.
-    </p>
-  </div>
-  <div class="button-row">
-    <button id="settingsDashboardBtn" class="btn btn-secondary" type="button">Open Dashboard</button>
-  </div>
-</section>
+<div class="surface-content-shell settings-content-shell">
+  <section class="surface-intro">
+    <div>
+      <p class="eyebrow">Settings</p>
+      <h2>Account and Garmin management</h2>
+      <p class="muted-copy">
+        Manage account access and Garmin credentials here. Dashboard access stays protected by the setup state.
+      </p>
+    </div>
+    <div class="button-row">
+      <button id="settingsDashboardBtn" class="btn btn-secondary" type="button">Open Dashboard</button>
+    </div>
+  </section>
 
-<div id="settingsAlert" class="status-banner" hidden></div>
+  <div id="settingsAlert" class="status-banner" hidden></div>
 
-<section class="auth-grid settings-grid">
-  <article class="panel auth-panel">
+  <section class="auth-grid settings-grid">
+    <article class="panel auth-panel">
+      <div class="panel-head-space">
+        <div>
+          <p class="eyebrow">Account</p>
+          <h2>Session</h2>
+        </div>
+        <p data-auth-status class="muted-copy">Not signed in</p>
+      </div>
+      <p class="muted-copy">
+        Account authentication is separate from Garmin configuration. Logging out always returns to the auth screen.
+      </p>
+      <div class="button-row">
+        <button class="btn btn-secondary" type="button" data-logout>Log Out</button>
+      </div>
+    </article>
+
+    <article class="panel auth-panel">
+      <div class="panel-head-space">
+        <div>
+          <p class="eyebrow">Garmin</p>
+          <h2>Reconnect or update Garmin</h2>
+        </div>
+      </div>
+      <p data-garmin-status class="muted-copy">Update Garmin credentials here when the connection changes.</p>
+      <label class="field">
+        <span>Garmin Email</span>
+        <input id="settingsGarminEmail" type="email" placeholder="your-garmin-login@example.com" autocomplete="username">
+      </label>
+      <label class="field">
+        <span>Garmin Password</span>
+        <input id="settingsGarminPassword" type="password" placeholder="Your Garmin password" autocomplete="current-password">
+      </label>
+      <div class="button-row">
+        <button class="btn btn-primary" type="button" data-garmin-submit="settings">Save Garmin Credentials</button>
+      </div>
+      <div id="settingsSyncStatusPanel" class="sync-status-panel"></div>
+    </article>
+  </section>
+
+  <section class="panel danger-zone-panel">
     <div class="panel-head-space">
       <div>
-        <p class="eyebrow">Account</p>
-        <h2>Session</h2>
+        <p class="eyebrow danger-zone-eyebrow">Danger Zone</p>
+        <h2>Delete Account</h2>
       </div>
-      <p data-auth-status class="muted-copy">Not signed in</p>
     </div>
     <p class="muted-copy">
-      Account authentication is separate from Garmin configuration. Logging out always returns to the auth screen.
+      Permanently delete your account, Garmin connection, sync status, and stored training data.
     </p>
+    <p id="dangerZoneAccountEmail" class="danger-zone-meta">Signed in as -</p>
     <div class="button-row">
-      <button class="btn btn-secondary" type="button" data-logout>Log Out</button>
+      <button id="deleteAccountBtn" class="btn btn-danger" type="button">Delete Account</button>
     </div>
-  </article>
 
-  <article class="panel auth-panel">
-    <div class="panel-head-space">
-      <div>
-        <p class="eyebrow">Garmin</p>
-        <h2>Reconnect or update Garmin</h2>
+    <div id="deleteAccountConfirmPanel" class="danger-confirmation" hidden>
+      <p class="danger-confirmation-title">Delete Account</p>
+      <p class="danger-confirmation-copy">
+        This permanently deletes your account, Garmin connection, sync status, and stored training data. This action cannot be undone.
+      </p>
+      <label class="field">
+        <span>Type DELETE to confirm.</span>
+        <input id="deleteAccountConfirmInput" type="text" placeholder="DELETE" autocomplete="off" spellcheck="false">
+      </label>
+      <p id="deleteAccountFeedback" class="danger-feedback">This action cannot be undone.</p>
+      <div class="button-row danger-confirmation-actions">
+        <button id="confirmDeleteAccountBtn" class="btn btn-danger" type="button" disabled>Delete Account Permanently</button>
+        <button id="cancelDeleteAccountBtn" class="btn btn-secondary" type="button">Cancel</button>
       </div>
     </div>
-    <p data-garmin-status class="muted-copy">Update Garmin credentials here when the connection changes.</p>
-    <label class="field">
-      <span>Garmin Email</span>
-      <input id="settingsGarminEmail" type="email" placeholder="your-garmin-login@example.com" autocomplete="username">
-    </label>
-    <label class="field">
-      <span>Garmin Password</span>
-      <input id="settingsGarminPassword" type="password" placeholder="Your Garmin password" autocomplete="current-password">
-    </label>
-    <div class="button-row">
-      <button class="btn btn-primary" type="button" data-garmin-submit="settings">Save Garmin Credentials</button>
-    </div>
-    <div id="settingsSyncStatusPanel" class="sync-status-panel"></div>
-  </article>
-</section>
+  </section>
+</div>

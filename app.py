@@ -8,7 +8,9 @@ from flask import Flask, jsonify, render_template, request
 
 from auth_supabase import require_user
 from backend.routes.dashboard import create_dashboard_blueprint
+from backend.routes.settings import create_settings_blueprint
 from backend.routes.sync import create_sync_blueprint
+from backend.services.account_service import AccountService
 from backend.services.app_flow_service import build_authenticated_app_state
 from backend.services.sync_errors import classify_sync_error
 from backend.services.sync_runner import SyncRunner
@@ -34,6 +36,7 @@ supabase = get_supabase_admin_client()
 store = GarminSessionStore(supabase)
 sync_status_service = SyncStatusService(supabase)
 sync_runner = SyncRunner(supabase_client=supabase, session_store=store)
+account_service = AccountService(supabase)
 DEBUG_MODE = os.environ.get("APP_ENV", "development").lower() != "production"
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
@@ -117,6 +120,7 @@ app.register_blueprint(
     )
 )
 app.register_blueprint(create_sync_blueprint(sync_runner=sync_runner, debug_mode=DEBUG_MODE))
+app.register_blueprint(create_settings_blueprint(account_service=account_service))
 
 
 def _mark_sync_error(user_id: str, message: str) -> None:
@@ -174,6 +178,11 @@ def index():
 
 @app.get("/auth")
 def auth_view():
+    return _render_app_shell()
+
+
+@app.get("/auth/callback")
+def auth_callback_view():
     return _render_app_shell()
 
 

@@ -11,6 +11,7 @@ from backend.services.app_flow_service import (
     GARMIN_STATE_READY,
     build_authenticated_app_state,
 )
+from observability import ErrorCategory, ServiceError
 
 
 class FakeGarminAccount:
@@ -22,6 +23,16 @@ class FakeGarminAccount:
 
     def credentials(self):
         return self._credentials
+
+
+class UnreadableGarminAccount(FakeGarminAccount):
+    def credentials(self):
+        raise ServiceError(
+            "Stored Garmin credentials could not be decrypted.",
+            status_code=500,
+            category=ErrorCategory.DB,
+            event="garmin.credentials_decrypt_failed",
+        )
 
 
 class AppFlowServiceTests(unittest.TestCase):
@@ -77,6 +88,26 @@ class AppFlowServiceTests(unittest.TestCase):
         self.assertEqual(APP_PHASE_SETTINGS, payload["phase"])
         self.assertEqual(GARMIN_STATE_ACTION_REQUIRED, payload["garmin"]["connectionState"])
         self.assertFalse(payload["garmin"]["isConfigured"])
+        self.assertTrue(payload["garmin"]["needsReconnect"])
+
+    def test_unreadable_garmin_credentials_route_to_settings(self):
+        payload = build_authenticated_app_state(UnreadableGarminAccount(), {"syncState": "fresh"})
+
+        self.assertEqual(APP_PHASE_SETTINGS, payload["phase"])
+        self.assertEqual("settings", payload["recommendedRoute"])
+        self.assertEqual(GARMIN_STATE_ACTION_REQUIRED, payload["garmin"]["connectionState"])
+        self.assertFalse(payload["garmin"]["isUsable"])
+        self.assertTrue(payload["garmin"]["needsReconnect"])
+
+    def test_empty_garmin_credentials_route_to_settings(self):
+        payload = build_authenticated_app_state(
+            FakeGarminAccount(credentials=("  ", "")),
+            {"syncState": "never_synced"},
+        )
+
+        self.assertEqual(APP_PHASE_SETTINGS, payload["phase"])
+        self.assertEqual("settings", payload["recommendedRoute"])
+        self.assertFalse(payload["dashboardAccessible"])
         self.assertTrue(payload["garmin"]["needsReconnect"])
 
 

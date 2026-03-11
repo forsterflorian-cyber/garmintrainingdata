@@ -18,14 +18,16 @@ export function renderNextDaysOutlookPanel(outlook) {
   title.textContent = "Likely Flow";
   body.innerHTML = outlook.days.map((day) => `
     <div class="outlook-row" data-tone="${safeHtml(day.tone || "neutral")}">
+      <span class="outlook-day">${safeHtml(day.label)}</span>
       <div class="outlook-copy">
-        <span class="outlook-label">${safeHtml(day.label)}</span>
         <strong>${safeHtml(day.recommendation)}</strong>
       </div>
-      <span class="outlook-chip" data-tone="${safeHtml(day.tone || "neutral")}">${safeHtml(day.statusChip || day.recoveryStatus || "")}</span>
+      ${day.statusChip || day.recoveryStatus
+        ? `<span class="outlook-chip" data-tone="${safeHtml(day.tone || "neutral")}">${safeHtml(day.statusChip || day.recoveryStatus || "")}</span>`
+        : ""}
     </div>
   `).join("");
-  meta.textContent = "Updates immediately when you select a different option.";
+  meta.textContent = "Updates when you preview a different session.";
   setPanelTone(panel, strongestTone(outlook.days));
 }
 

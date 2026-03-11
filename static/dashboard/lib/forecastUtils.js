@@ -1,5 +1,7 @@
+const PLANNED_SESSION_STORAGE_PREFIX = "garmintrainingdata:planned";
+
 export function plannedSessionStorageKey(userId, date) {
-  return `garmintrainingdata:planned:${userId || "anon"}:${date || "latest"}`;
+  return `${PLANNED_SESSION_STORAGE_PREFIX}:${userId || "anon"}:${date || "latest"}`;
 }
 
 export function getPlannedSession(userId, date) {
@@ -20,6 +22,21 @@ export function setPlannedSession(userId, date, sessionType) {
     window.localStorage.setItem(key, sessionType);
   } catch (_error) {
     // Ignore storage failures and continue with in-memory behavior.
+  }
+}
+
+export function clearPlannedSessionsForUser(userId) {
+  if (!userId) {
+    return;
+  }
+
+  try {
+    const prefix = `${PLANNED_SESSION_STORAGE_PREFIX}:${userId}:`;
+    Object.keys(window.localStorage)
+      .filter((key) => key.startsWith(prefix))
+      .forEach((key) => window.localStorage.removeItem(key));
+  } catch (_error) {
+    // Ignore storage failures and continue with the sign-out flow.
   }
 }
 
