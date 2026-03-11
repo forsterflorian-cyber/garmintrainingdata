@@ -49,7 +49,7 @@ textarea {
 .page-shell {
   max-width: 1280px;
   margin: 0 auto;
-  padding: 24px 24px 48px;
+  padding: 18px 24px 40px;
 }
 
 .app-shell,
@@ -58,32 +58,42 @@ textarea {
 .auth-shell,
 .flow-shell {
   display: grid;
-  gap: 18px;
+  gap: 14px;
 }
 
 .app-frame-header,
 .masthead {
-  display: flex;
-  justify-content: space-between;
-  gap: 20px;
-  align-items: center;
+  width: min(100%, 1200px);
+  margin-inline: auto;
 }
 
 .app-frame-header {
-  width: min(100%, 1200px);
-  margin: 0 auto;
-  padding-bottom: 2px;
+  display: grid;
+  gap: 8px;
+  padding-bottom: 0;
+}
+
+.app-header-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-end;
+}
+
+.app-header-row-secondary {
+  justify-content: flex-start;
+  align-items: center;
 }
 
 .app-frame-copy,
 .masthead-copy {
   display: grid;
-  gap: 6px;
+  gap: 0;
   min-width: 0;
 }
 
 .app-frame-copy {
-  max-width: 540px;
+  max-width: 460px;
 }
 
 .masthead {
@@ -97,6 +107,17 @@ textarea {
   max-width: 460px;
 }
 
+.app-header-controls {
+  display: grid;
+  gap: 4px;
+  justify-items: end;
+  min-width: 0;
+}
+
+.app-header-actions {
+  gap: 8px;
+}
+
 .app-frame-header h1,
 .masthead h1,
 .panel h2,
@@ -107,8 +128,8 @@ textarea {
 
 .app-frame-header h1 {
   margin: 0;
-  font-size: clamp(1.3rem, 2vw, 1.6rem);
-  line-height: 1.02;
+  font-size: clamp(1.08rem, 1.8vw, 1.32rem);
+  line-height: 1.04;
 }
 
 .masthead h1 {
@@ -140,7 +161,7 @@ textarea {
 
 .app-view.is-active {
   display: grid;
-  gap: 18px;
+  gap: 14px;
 }
 
 .auth-shell,
@@ -204,8 +225,10 @@ textarea {
 
 .session-label {
   margin: 0;
-  max-width: 28ch;
+  max-width: 36ch;
+  font-size: 0.76rem;
   text-align: right;
+  opacity: 0.8;
 }
 
 .app-state-panel {
@@ -740,12 +763,12 @@ th {
 
 .surface-nav {
   display: inline-flex;
-  gap: 6px;
-  padding: 6px;
+  gap: 4px;
+  padding: 4px;
   border-radius: 999px;
-  background: rgba(4, 15, 20, 0.8);
+  background: rgba(4, 15, 20, 0.68);
   border: 1px solid var(--line);
-  box-shadow: var(--shadow);
+  box-shadow: none;
 }
 
 .surface-nav-btn {
@@ -753,14 +776,16 @@ th {
   background: transparent;
   color: var(--muted);
   border-radius: 999px;
-  padding: 11px 16px;
+  padding: 8px 12px;
+  font-size: 0.92rem;
   cursor: pointer;
   transition: background 140ms ease, color 140ms ease;
 }
 
 .surface-nav-btn.is-active {
-  background: rgba(255, 184, 92, 0.14);
+  background: rgba(255, 184, 92, 0.18);
   color: var(--text);
+  box-shadow: inset 0 0 0 1px rgba(255, 184, 92, 0.1);
 }
 
 .utility-row {
@@ -772,7 +797,29 @@ th {
 }
 
 .utility-toggle {
-  min-width: 124px;
+  min-width: 104px;
+}
+
+.app-nav {
+  background: rgba(4, 15, 20, 0.48);
+  border-color: rgba(173, 212, 202, 0.1);
+}
+
+.app-nav .surface-nav-btn {
+  padding: 7px 11px;
+}
+
+.surface-nav-secondary {
+  background: rgba(4, 15, 20, 0.6);
+}
+
+.app-header-actions .btn {
+  padding: 8px 14px;
+}
+
+.surface-stack {
+  display: grid;
+  gap: 12px;
 }
 
 .analysis-toolbar {
@@ -785,7 +832,7 @@ th {
 }
 
 .plan-surface {
-  padding: 22px 22px 24px;
+  padding: 18px 20px 22px;
   background:
     linear-gradient(180deg, rgba(255, 184, 92, 0.04), transparent 12%),
     var(--panel-strong);
@@ -805,8 +852,8 @@ th {
 }
 
 .plan-options-section {
-  margin-top: 20px;
-  padding-top: 18px;
+  margin-top: 16px;
+  padding-top: 16px;
   border-top: 1px solid rgba(173, 212, 202, 0.08);
 }
 
@@ -879,8 +926,8 @@ th {
 .decision-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.62fr) minmax(300px, 0.78fr);
-  gap: 16px;
-  margin-top: 16px;
+  gap: 14px;
+  margin-top: 12px;
 }
 
 .decision-hero,
@@ -896,11 +943,11 @@ th {
 
 .decision-hero {
   display: grid;
-  gap: 16px;
-  padding: 28px 30px;
+  gap: 18px;
+  padding: 24px 24px 20px;
   background:
-    linear-gradient(145deg, rgba(255, 184, 92, 0.2), rgba(86, 208, 179, 0.08)),
-    rgba(7, 23, 30, 0.92);
+    linear-gradient(155deg, rgba(255, 184, 92, 0.16), rgba(86, 208, 179, 0.06) 68%),
+    rgba(7, 23, 30, 0.94);
 }
 
 .decision-level-row,
@@ -925,74 +972,93 @@ th {
 }
 
 .plan-surface-head {
-  align-items: center;
-  gap: 16px;
-  padding-bottom: 10px;
+  align-items: flex-start;
+  gap: 12px;
+  padding-bottom: 8px;
   border-bottom: 1px solid rgba(173, 212, 202, 0.08);
 }
 
 .plan-surface-copy {
   display: grid;
-  gap: 4px;
+  gap: 2px;
 }
 
 .plan-surface-head h2 {
-  font-size: clamp(1.2rem, 2.2vw, 1.55rem);
+  font-size: clamp(1.08rem, 1.9vw, 1.34rem);
 }
 
 .plan-surface-meta {
   margin: 0;
-  font-size: 0.88rem;
+  font-size: 0.84rem;
 }
 
 .decision-head {
   display: grid;
-  gap: 12px;
-  max-width: 58ch;
+  gap: 10px;
+  max-width: 60ch;
 }
 
 .decision-level {
   font-family: "Space Grotesk", sans-serif;
-  font-size: clamp(3.1rem, 5.4vw, 5.4rem);
-  line-height: 0.86;
-  margin-top: 10px;
-  max-width: 11ch;
+  font-size: clamp(2.6rem, 4.8vw, 4.4rem);
+  line-height: 0.92;
+  margin-top: 0;
+  max-width: 12ch;
 }
 
 .decision-summary {
   margin: 0;
-  font-size: 1.04rem;
-  line-height: 1.45;
-  max-width: 52ch;
+  font-size: 1rem;
+  line-height: 1.4;
+  max-width: 44ch;
   color: rgba(242, 244, 238, 0.92);
 }
 
 .decision-conclusion {
   margin: 0;
-  max-width: 50ch;
-  font-size: 0.92rem;
+  max-width: 44ch;
+  font-size: 0.9rem;
+  color: rgba(159, 176, 170, 0.96);
+}
+
+.decision-support-band {
+  display: grid;
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(173, 212, 202, 0.08);
 }
 
 .decision-score-stack {
   display: grid;
-  gap: 8px;
-  min-width: 120px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  min-width: 0;
+  max-width: 460px;
 }
 
 .score-chip,
 .support-chip {
-  padding: 10px 12px;
-  border-radius: 14px;
-  background: rgba(3, 11, 16, 0.72);
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(3, 11, 16, 0.58);
   border: 1px solid rgba(173, 212, 202, 0.08);
 }
 
 .score-chip strong,
 .support-chip strong {
   display: block;
-  margin-top: 4px;
+  margin-top: 0;
   font-family: "Space Grotesk", sans-serif;
-  font-size: 1.25rem;
+  font-size: 1.16rem;
+  line-height: 1.05;
+}
+
+.score-chip small {
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.35;
 }
 
 .decision-status-chips,
@@ -1001,11 +1067,13 @@ th {
 }
 
 .decision-status-chips {
-  gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
 }
 
 .decision-label,
-.recommendation-chip span {
+.recommendation-chip-label {
   font-size: 0.72rem;
   font-family: "IBM Plex Mono", monospace;
   letter-spacing: 0.08em;
@@ -1014,17 +1082,37 @@ th {
 
 .recommendation-chip {
   display: grid;
-  gap: 3px;
-  padding: 8px 10px;
-  border-radius: 12px;
-  background: rgba(3, 11, 16, 0.78);
+  gap: 6px;
+  padding: 12px 14px 13px;
+  border-radius: 16px;
+  background: rgba(3, 11, 16, 0.56);
   min-width: 0;
+}
+
+.recommendation-chip-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.recommendation-chip-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(173, 212, 202, 0.36);
 }
 
 .recommendation-chip strong {
   display: block;
   margin-top: 0;
-  font-size: 0.92rem;
+  font-size: 1rem;
+  line-height: 1.08;
+}
+
+.recommendation-chip-detail {
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.35;
 }
 
 .decision-side,
@@ -1518,6 +1606,7 @@ th {
 .decision-hero[data-tone="positive"],
 .forecast-panel[data-tone="positive"],
 .recommendation-chip[data-tone="positive"],
+.score-chip[data-tone="positive"],
 .metric-delta-bar[data-tone="positive"],
 .snapshot-card[data-tone="positive"],
 .sync-badge[data-tone="positive"],
@@ -1528,6 +1617,7 @@ th {
 .decision-hero[data-tone="warning"],
 .forecast-panel[data-tone="warning"],
 .recommendation-chip[data-tone="warning"],
+.score-chip[data-tone="warning"],
 .metric-delta-bar[data-tone="warning"],
 .snapshot-card[data-tone="warning"],
 .sync-badge[data-tone="warning"],
@@ -1538,11 +1628,48 @@ th {
 .decision-hero[data-tone="critical"],
 .forecast-panel[data-tone="critical"],
 .recommendation-chip[data-tone="critical"],
+.score-chip[data-tone="critical"],
 .metric-delta-bar[data-tone="critical"],
 .snapshot-card[data-tone="critical"],
 .sync-badge[data-tone="critical"],
 .sync-panel[data-tone="critical"] {
   border-color: rgba(255, 126, 114, 0.28);
+}
+
+.recommendation-chip[data-tone="positive"],
+.score-chip[data-tone="positive"] {
+  background:
+    linear-gradient(180deg, rgba(99, 230, 190, 0.08), transparent 100%),
+    rgba(3, 11, 16, 0.56);
+}
+
+.recommendation-chip[data-tone="warning"],
+.score-chip[data-tone="warning"] {
+  background:
+    linear-gradient(180deg, rgba(255, 209, 102, 0.08), transparent 100%),
+    rgba(3, 11, 16, 0.56);
+}
+
+.recommendation-chip[data-tone="critical"],
+.score-chip[data-tone="critical"] {
+  background:
+    linear-gradient(180deg, rgba(255, 126, 114, 0.08), transparent 100%),
+    rgba(3, 11, 16, 0.56);
+}
+
+.recommendation-chip[data-tone="positive"] .recommendation-chip-dot {
+  background: var(--good);
+  box-shadow: 0 0 0 5px rgba(99, 230, 190, 0.12);
+}
+
+.recommendation-chip[data-tone="warning"] .recommendation-chip-dot {
+  background: var(--warn);
+  box-shadow: 0 0 0 5px rgba(255, 209, 102, 0.12);
+}
+
+.recommendation-chip[data-tone="critical"] .recommendation-chip-dot {
+  background: var(--danger);
+  box-shadow: 0 0 0 5px rgba(255, 126, 114, 0.12);
 }
 
 @media (max-width: 1200px) {
@@ -1574,7 +1701,7 @@ th {
     padding: 18px 16px 32px;
   }
 
-  .app-frame-header,
+  .app-header-row,
   .masthead,
   .panel-head-space,
   .chart-head,
@@ -1585,6 +1712,14 @@ th {
 
   .utility-stack {
     justify-items: stretch;
+  }
+
+  .app-header-controls {
+    justify-items: stretch;
+  }
+
+  .app-header-actions {
+    justify-content: flex-start;
   }
 
   .utility-row {
@@ -1613,14 +1748,13 @@ th {
     padding: 16px;
   }
 
-  .decision-level-row {
-    flex-direction: column;
+  .decision-score-stack {
+    grid-template-columns: 1fr;
+    max-width: none;
   }
 
-  .decision-score-stack {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    min-width: 0;
-    width: 100%;
+  .decision-status-chips {
+    grid-template-columns: 1fr;
   }
 
   .surface-nav {
@@ -1641,6 +1775,10 @@ th {
   .toolbar-field,
   .toolbar-field select {
     width: 100%;
+  }
+
+  .app-header-actions .btn {
+    width: auto;
   }
 
   .snapshot-grid {

@@ -1,7 +1,6 @@
 <section class="panel decision-panel plan-surface">
   <div class="panel-head-space plan-surface-head">
     <div class="plan-surface-copy">
-      <p class="eyebrow">Plan</p>
       <h2 id="decisionTargetDay">-</h2>
       <p id="decisionTargetMeta" class="muted-copy plan-surface-meta">No Focus Day Loaded.</p>
     </div>
@@ -13,25 +12,27 @@
 
   <div class="decision-layout plan-decision-layout">
     <article id="decisionHero" class="decision-hero" data-tone="neutral">
-      <div class="decision-level-row">
-        <div class="decision-head">
-          <p class="decision-label">Training Recommendation</p>
-          <div id="decisionLevel" class="decision-level">-</div>
-        </div>
-        <div class="decision-score-stack">
-          <div class="score-chip">
-            <span>Recovery</span>
-            <strong id="decisionScore">-</strong>
-          </div>
-          <div class="score-chip">
-            <span>Readiness</span>
-            <strong id="decisionReadiness">-</strong>
-          </div>
-        </div>
+      <div class="decision-head">
+        <p class="decision-label">Training Recommendation</p>
+        <div id="decisionLevel" class="decision-level">-</div>
+        <p id="decisionSummary" class="decision-summary">No Recommendation Yet.</p>
+        <p id="decisionConclusion" class="decision-conclusion muted-copy">Recommendation updates after the next sync.</p>
       </div>
-      <p id="decisionSummary" class="decision-summary">No Recommendation Yet.</p>
-      <p id="decisionConclusion" class="decision-conclusion muted-copy">Recommendation updates after the next sync.</p>
-      <div id="decisionStatusChips" class="decision-status-chips"></div>
+      <div class="decision-support-band">
+        <div class="decision-score-stack">
+          <article id="decisionRecoveryCard" class="score-chip" data-tone="neutral">
+            <span>Recovery Status</span>
+            <strong id="decisionRecoveryStatus">-</strong>
+            <small id="decisionRecoveryMeta">Score -</small>
+          </article>
+          <article id="decisionReadinessCard" class="score-chip" data-tone="neutral">
+            <span>Readiness</span>
+            <strong id="decisionReadinessStatus">-</strong>
+            <small id="decisionReadinessMeta">-</small>
+          </article>
+        </div>
+        <div id="decisionStatusChips" class="decision-status-chips"></div>
+      </div>
     </article>
 
     <div class="decision-side plan-side-stack">

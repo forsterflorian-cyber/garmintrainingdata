@@ -43,6 +43,7 @@ const AUTH_PROVIDERS = Object.freeze({
 });
 const ADVANCED_MODE_KEY = "dashboard.advancedMode";
 const AUTH_REDIRECT_PROVIDER_KEY = "dashboard.auth.redirectProvider";
+const SUPABASE_AUTH_STORAGE_KEY = "dashboard.supabase.auth";
 const ACCOUNT_DELETE_CONFIRMATION_TEXT = "DELETE";
 
 function loadAdvancedModePreference() {
@@ -52,6 +53,59 @@ function loadAdvancedModePreference() {
     return false;
   }
 }
+
+function resolveBrowserAuthStorage() {
+  for (const storageName of ["localStorage", "sessionStorage"]) {
+    try {
+      const storage = window[storageName];
+      if (!storage) {
+        continue;
+      }
+      const probeKey = `__dashboard.auth.${storageName}.probe__`;
+      storage.setItem(probeKey, "1");
+      storage.removeItem(probeKey);
+      return storage;
+    } catch (_error) {
+      // Try the next storage backend.
+    }
+  }
+  return null;
+}
+
+const browserAuthStorageBackend = resolveBrowserAuthStorage();
+const browserAuthStorageAvailable = Boolean(browserAuthStorageBackend);
+const supabaseAuthStorage = {
+  getItem(key) {
+    if (!browserAuthStorageBackend) {
+      return null;
+    }
+    try {
+      return browserAuthStorageBackend.getItem(key);
+    } catch (_error) {
+      return null;
+    }
+  },
+  setItem(key, value) {
+    if (!browserAuthStorageBackend) {
+      return;
+    }
+    try {
+      browserAuthStorageBackend.setItem(key, value);
+    } catch (_error) {
+      // Ignore storage write failures and let auth methods surface the failure.
+    }
+  },
+  removeItem(key) {
+    if (!browserAuthStorageBackend) {
+      return;
+    }
+    try {
+      browserAuthStorageBackend.removeItem(key);
+    } catch (_error) {
+      // Ignore storage cleanup failures during auth transitions.
+    }
+  },
+};
 
 const state = {
   currentSession: null,
@@ -71,16 +125,18 @@ const state = {
   syncPollInFlight: false,
   autoSyncKey: null,
   accountDeletionPending: false,
-  sessionRestorePending: false,
+  sessionRestorePending: isAuthCallbackPath(window.location.pathname),
 };
 
 const supabaseClient = window.supabase && APP_CONFIG.supabaseUrl && APP_CONFIG.supabaseAnonKey
   ? window.supabase.createClient(APP_CONFIG.supabaseUrl, APP_CONFIG.supabaseAnonKey, {
       auth: {
-        detectSessionInUrl: true,
+        detectSessionInUrl: false,
         flowType: "pkce",
         persistSession: true,
         autoRefreshToken: true,
+        storageKey: SUPABASE_AUTH_STORAGE_KEY,
+        storage: supabaseAuthStorage,
       },
     })
   : null;
@@ -98,7 +154,7 @@ function missingConfigMessage() {
 }
 
 function authCallbackUrl() {
-  return new URL(APP_ROUTE_PATHS.authCallback, window.location.origin).toString();
+  return `${window.location.origin}${APP_ROUTE_PATHS.authCallback}`;
 }
 
 function normalizedPathname(pathname = window.location.pathname) {
@@ -159,12 +215,20 @@ function clearPendingAuthProvider() {
   }
 }
 
+function isPkceVerifierError(detail = "") {
+  const normalizedDetail = String(detail || "").trim().toLowerCase();
+  return normalizedDetail.includes("code verifier") || normalizedDetail.includes("code_verifier");
+}
+
 function callbackFailureMessage(detail = null) {
   const providerId = consumePendingAuthProvider();
   const flowLabel = providerId === "google" ? "Google sign-in" : "Authentication";
   const cleanedDetail = String(detail || "").trim();
   if (!cleanedDetail) {
     return `${flowLabel} could not be completed. Try again.`;
+  }
+  if (isPkceVerifierError(cleanedDetail)) {
+    return `${flowLabel} failed because the secure login state was lost. Return to ${window.location.origin}${APP_ROUTE_PATHS.auth} and try again on this origin.`;
   }
   return `${flowLabel} failed: ${cleanedDetail}`;
 }
@@ -273,10 +337,11 @@ function syncLocationWithView(view) {
 function syncSurfaceUi({ syncHash = true } = {}) {
   const activeView = resolveSurfaceView(state.activeView);
   state.activeView = activeView;
+  const showSurfaceControls = state.appView === "dashboard";
 
   const debugButton = el("debugNavBtn");
   if (debugButton) {
-    debugButton.hidden = !debugSurfaceAllowed();
+    debugButton.hidden = !showSurfaceControls || !debugSurfaceAllowed();
   }
 
   document.querySelectorAll("[data-view]").forEach((button) => {
@@ -294,7 +359,7 @@ function syncSurfaceUi({ syncHash = true } = {}) {
   const advancedToggle = el("advancedToggleBtn");
   if (advancedToggle) {
     const forcedOn = Boolean(APP_CONFIG.debugMode);
-    advancedToggle.hidden = forcedOn;
+    advancedToggle.hidden = !showSurfaceControls || forcedOn;
     advancedToggle.setAttribute("aria-pressed", state.advancedMode ? "true" : "false");
     advancedToggle.textContent = state.advancedMode ? "Debug On" : "Debug Off";
   }
@@ -372,6 +437,11 @@ function syncAppUi({ replaceHistory = false } = {}) {
     globalLogoutBtn.hidden = !isAuthenticated;
   }
 
+  const surfaceHeaderRow = el("surfaceHeaderRow");
+  if (surfaceHeaderRow) {
+    surfaceHeaderRow.hidden = state.appView !== "dashboard";
+  }
+
   const settingsDashboardBtn = el("settingsDashboardBtn");
   if (settingsDashboardBtn) {
     const dashboardAllowed = Boolean(state.appState?.dashboardAccessible);
@@ -420,22 +490,45 @@ async function completeAuthCallbackIfNeeded() {
     return { handled: false, session: null, message: null, missingSessionMessage: null };
   }
 
-  const params = authCallbackParams();
-  if (params.error || params.errorDescription) {
-    return {
-      handled: true,
-      session: null,
-      message: callbackFailureMessage(params.errorDescription || params.error),
-      missingSessionMessage: null,
-    };
-  }
+  try {
+    const params = authCallbackParams();
+    if (params.error || params.errorDescription) {
+      return {
+        handled: true,
+        session: null,
+        message: callbackFailureMessage(params.errorDescription || params.error),
+        missingSessionMessage: null,
+      };
+    }
 
-  if (params.tokenHash && params.type) {
+    if (params.tokenHash && params.type) {
+      const client = requireSupabaseClient();
+      const { data, error } = await client.auth.verifyOtp({
+        token_hash: params.tokenHash,
+        type: params.type,
+      });
+      if (error) {
+        return {
+          handled: true,
+          session: null,
+          message: callbackFailureMessage(error.message),
+          missingSessionMessage: null,
+        };
+      }
+      return {
+        handled: true,
+        session: data?.session || null,
+        message: null,
+        missingSessionMessage: data?.session ? null : "Confirmation completed. Sign in to continue.",
+      };
+    }
+
+    if (!params.code) {
+      return { handled: false, session: null, message: null, missingSessionMessage: null };
+    }
+
     const client = requireSupabaseClient();
-    const { data, error } = await client.auth.verifyOtp({
-      token_hash: params.tokenHash,
-      type: params.type,
-    });
+    const { data, error } = await client.auth.exchangeCodeForSession(params.code);
     if (error) {
       return {
         handled: true,
@@ -444,35 +537,21 @@ async function completeAuthCallbackIfNeeded() {
         missingSessionMessage: null,
       };
     }
+
     return {
       handled: true,
       session: data?.session || null,
       message: null,
-      missingSessionMessage: data?.session ? null : "Confirmation completed. Sign in to continue.",
+      missingSessionMessage: null,
     };
-  }
-
-  if (!params.code) {
-    return { handled: false, session: null, message: null, missingSessionMessage: null };
-  }
-
-  const client = requireSupabaseClient();
-  const { data, error } = await client.auth.exchangeCodeForSession(params.code);
-  if (error) {
+  } catch (error) {
     return {
       handled: true,
       session: null,
-      message: callbackFailureMessage(error.message),
+      message: callbackFailureMessage(error?.message || "Unexpected callback error."),
       missingSessionMessage: null,
     };
   }
-
-  return {
-    handled: true,
-    session: data?.session || null,
-    message: null,
-    missingSessionMessage: null,
-  };
 }
 
 function buildApiError(response, payload) {
@@ -1186,6 +1265,10 @@ async function performAuthAction(action, providerId) {
 
   const client = requireSupabaseClient();
   if (provider.kind === "oauth") {
+    if (!browserAuthStorageAvailable) {
+      setAuthStatus(`Google sign-in requires browser storage on ${window.location.origin}. Enable local or session storage and try again.`);
+      return;
+    }
     persistPendingAuthProvider(provider.id);
     setAuthStatus(`Redirecting to ${provider.label}...`);
     const { error } = await client.auth.signInWithOAuth({
@@ -1548,12 +1631,18 @@ function bindEvents() {
   }
 
   window.addEventListener("popstate", () => {
+    if (state.sessionRestorePending) {
+      return;
+    }
     state.activeView = resolveSurfaceView(requestedViewFromHash());
     void routeFromLocation();
   });
 }
 
 async function routeFromLocation() {
+  if (state.sessionRestorePending) {
+    return;
+  }
   const requestedView = requestedAppViewFromPath();
   const resolvedView = resolveAllowedAppView(requestedView);
   const loadDashboardIfNeeded = resolvedView === "dashboard" && state.appView !== "dashboard";
@@ -1561,16 +1650,16 @@ async function routeFromLocation() {
 }
 
 async function restoreSession() {
-  if (!supabaseClient) {
-    setLoggedOutState({
-      authMessage: missingConfigMessage(),
-      garminMessage: missingConfigMessage(),
-    });
-    return;
-  }
-
   state.sessionRestorePending = true;
   try {
+    if (!supabaseClient) {
+      setLoggedOutState({
+        authMessage: missingConfigMessage(),
+        garminMessage: missingConfigMessage(),
+      });
+      return;
+    }
+
     const callbackResult = await completeAuthCallbackIfNeeded();
     if (callbackResult.message) {
       applyCurrentSession(null);
@@ -1639,12 +1728,22 @@ if (supabaseClient) {
   });
 }
 
-state.activeView = resolveSurfaceView(requestedViewFromHash());
-bindEvents();
-resetAccountDeletionUi();
-syncSurfaceUi({ syncHash: false });
-setAuthUi(null);
-renderDashboard();
-renderSyncStatusPanel({}, "settingsSyncStatusPanel");
-syncAppUi({ replaceHistory: false });
-restoreSession();
+async function bootstrapApplication() {
+  state.activeView = resolveSurfaceView(requestedViewFromHash());
+  bindEvents();
+  resetAccountDeletionUi();
+  setAuthUi(null);
+  renderDashboard();
+  renderSyncStatusPanel({}, "settingsSyncStatusPanel");
+
+  if (isAuthCallbackPath()) {
+    await restoreSession();
+    return;
+  }
+
+  syncSurfaceUi({ syncHash: false });
+  syncAppUi({ replaceHistory: false });
+  await restoreSession();
+}
+
+void bootstrapApplication();

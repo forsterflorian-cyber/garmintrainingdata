@@ -24,10 +24,42 @@ class AuthFlowContractTests(unittest.TestCase):
         source = (REPO_ROOT / "static" / "dashboard" / "main.js").read_text(encoding="utf-8")
 
         self.assertIn('flowType: "pkce"', source)
+        self.assertIn("detectSessionInUrl: false", source)
         self.assertIn("signInWithOAuth", source)
         self.assertIn("exchangeCodeForSession", source)
         self.assertIn("verifyOtp", source)
         self.assertIn('authCallback: "/auth/callback"', source)
+        self.assertIn('return `${window.location.origin}${APP_ROUTE_PATHS.authCallback}`;', source)
+        self.assertIn("storageKey: SUPABASE_AUTH_STORAGE_KEY", source)
+        self.assertIn("storage: supabaseAuthStorage", source)
+
+    def test_frontend_bootstraps_callback_before_location_sync(self):
+        source = (REPO_ROOT / "static" / "dashboard" / "main.js").read_text(encoding="utf-8")
+
+        self.assertIn("sessionRestorePending: isAuthCallbackPath(window.location.pathname)", source)
+        self.assertIn(
+            """async function bootstrapApplication() {
+  state.activeView = resolveSurfaceView(requestedViewFromHash());
+  bindEvents();
+  resetAccountDeletionUi();
+  setAuthUi(null);
+  renderDashboard();
+  renderSyncStatusPanel({}, "settingsSyncStatusPanel");
+
+  if (isAuthCallbackPath()) {
+    await restoreSession();
+    return;
+  }
+
+  syncSurfaceUi({ syncHash: false });
+  syncAppUi({ replaceHistory: false });
+  await restoreSession();
+}
+
+void bootstrapApplication();""",
+            source,
+        )
+        self.assertIn("secure login state was lost", source)
 
 
 if __name__ == "__main__":

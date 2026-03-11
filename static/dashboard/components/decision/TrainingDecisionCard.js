@@ -13,19 +13,25 @@ export function renderTrainingDecisionCard({ payload }) {
   const headline = buildDecisionHeadline(decision.primaryRecommendation);
   const subline = buildDecisionSubline(decision);
   const guidance = buildDecisionGuidance(decision);
+  const recoveryCard = buildRecoveryCard(decision.recoveryStatus, decision.recoveryScore);
+  const readinessCard = buildReadinessCard(payload?.today?.readiness);
 
   el("decisionTargetDay").textContent = `${targetWindow}: ${recommendationDay}`;
   el("decisionTargetMeta").textContent = payload?.date
-    ? `Focus day ${focusDay} | Recommendation for ${recommendationDay}`
+    ? `Reviewing ${focusDay} / Decision for ${recommendationDay}`
     : "No focus day loaded.";
   el("decisionLevel").textContent = headline;
-  el("decisionScore").textContent = formatNumber(decision.recoveryScore, 2);
-  el("decisionReadiness").textContent = formatNumber(payload?.today?.readiness, 0);
   el("decisionSummary").textContent = subline;
   el("decisionConclusion").textContent = guidance;
   el("decisionConclusion").hidden = !guidance;
+  el("decisionRecoveryStatus").textContent = recoveryCard.status;
+  el("decisionRecoveryMeta").textContent = recoveryCard.meta;
+  el("decisionReadinessStatus").textContent = readinessCard.status;
+  el("decisionReadinessMeta").textContent = readinessCard.meta;
   el("decisionStatusChips").innerHTML = renderRecommendationChips(decision.statusChips || []);
   setPanelTone(el("decisionHero"), toneForRecommendation(decision.primaryRecommendation));
+  setPanelTone(el("decisionRecoveryCard"), recoveryCard.tone);
+  setPanelTone(el("decisionReadinessCard"), readinessCard.tone);
 }
 
 function toneForRecommendation(recommendation) {
@@ -43,62 +49,137 @@ function toneForRecommendation(recommendation) {
 
 function buildDecisionHeadline(primaryRecommendation) {
   return {
-    "Threshold OK": "Threshold Training Recommended",
-    "VO2max OK": "VO2 Training Recommended",
+    "Threshold OK": "Threshold Session Recommended",
+    "VO2max OK": "VO2 Session Recommended",
     "Moderate only": "Moderate Training Only",
-    "Easy Aerobic": "Easy Training Recommended",
+    "Easy Aerobic": "Easy Training Only",
     "Recovery day": "Recovery Day Recommended",
     "Avoid intensity": "Recovery Day Recommended",
-    "Strength OK": "Strength Training Recommended",
+    "Strength OK": "Strength Focus Recommended",
   }[primaryRecommendation] || safeText(primaryRecommendation, "No Recommendation Yet");
 }
 
 function buildDecisionSubline(decision) {
-  const recovery = humanizeRecoveryStatus(decision.recoveryStatus);
-  const load = humanizeLoadStatus(decision.loadTolerance);
-  const intensity = humanizeIntensity(decision.intensityPermission);
+  const recovery = shortRecoveryLine(decision.recoveryStatus);
+  const load = shortLoadLine(decision.loadTolerance);
+  const intensity = shortIntensityLine(decision.intensityPermission);
 
   if (!recovery && !load && !intensity) {
     return "Sync data to load your plan.";
   }
 
-  return [
-    recovery ? `Recovery ${recovery}` : null,
-    load ? `Load ${load}` : null,
-    intensity,
-  ].filter(Boolean).join(" | ");
+  return [recovery, load, intensity].filter(Boolean).join(" / ");
 }
 
 function buildDecisionGuidance(decision) {
   if (decision?.strengthGuidance) {
     return safeText(decision.strengthGuidance);
   }
-  return decision?.primaryRecommendation ? "" : "Recommendation updates after the next sync.";
+  if (!decision?.primaryRecommendation) {
+    return "Recommendation updates after the next sync.";
+  }
+  return {
+    "Threshold OK": "Keep the rest of the session controlled around the quality work.",
+    "VO2max OK": "Use the green light for intensity, but keep the session well structured.",
+    "Moderate only": "Keep effort controlled and leave hard intervals for another day.",
+    "Easy Aerobic": "Stay easy and use the session to support recovery.",
+    "Recovery day": "Use easy movement only and keep overall strain low.",
+    "Avoid intensity": "Skip hard load today and keep everything restorative.",
+    "Strength OK": "Strength can lead today while endurance work stays moderate.",
+  }[decision.primaryRecommendation] || "";
 }
 
-function humanizeRecoveryStatus(status) {
+function buildRecoveryCard(status, score) {
+  const detail = {
+    Good: "Quality work supported",
+    Stable: "Controlled load fits",
+    Borderline: "Moderate training recommended",
+    Poor: "Recovery day recommended",
+  }[status];
+
+  if (!detail) {
+    return {
+      status: "Waiting for sync",
+      meta: "No recovery score yet",
+      tone: "neutral",
+    };
+  }
+
   return {
-    Good: "good",
-    Stable: "stable",
-    Borderline: "borderline",
-    Poor: "poor",
+    status: status === "Good" ? "Ready" : status,
+    meta: `${detail} / score ${formatNumber(score, 2)}`,
+    tone: toneForRecoveryStatus(status),
+  };
+}
+
+function buildReadinessCard(readiness) {
+  if (readiness === null || readiness === undefined || Number.isNaN(Number(readiness))) {
+    return {
+      status: "Waiting for sync",
+      meta: "No readiness score yet",
+      tone: "neutral",
+    };
+  }
+
+  const numericReadiness = Number(readiness);
+  let status = "Low";
+  if (numericReadiness >= 75) {
+    status = "Ready";
+  } else if (numericReadiness >= 60) {
+    status = "Moderate";
+  } else if (numericReadiness >= 45) {
+    status = "Cautious";
+  }
+
+  return {
+    status,
+    meta: `${formatNumber(numericReadiness, 0)} today`,
+    tone: toneForReadiness(numericReadiness),
+  };
+}
+
+function shortRecoveryLine(status) {
+  return {
+    Good: "Recovery strong",
+    Stable: "Recovery steady",
+    Borderline: "Recovery borderline",
+    Poor: "Recovery low",
   }[status] || "";
 }
 
-function humanizeLoadStatus(status) {
+function shortLoadLine(status) {
   return {
-    High: "high",
-    Normal: "normal",
-    Reduced: "reduced",
-    Low: "low",
+    High: "Load well supported",
+    Normal: "Load balanced",
+    Reduced: "Load reduced",
+    Low: "Load restricted",
   }[status] || "";
 }
 
-function humanizeIntensity(intensityPermission) {
+function shortIntensityLine(intensityPermission) {
   return {
     vo2: "VO2 allowed",
     threshold: "Threshold allowed",
-    moderate: "Moderate only",
-    none: "Avoid intensity",
+    moderate: "Moderate work only",
+    none: "No hard intervals",
   }[intensityPermission] || "";
+}
+
+function toneForRecoveryStatus(status) {
+  return {
+    Good: "positive",
+    Stable: "warning",
+    Borderline: "warning",
+    Poor: "critical",
+  }[status] || "neutral";
+}
+
+function toneForReadiness(readiness) {
+  if (readiness >= 75) {
+    return "positive";
+  }
+  if (readiness >= 45) {
+    return "warning";
+  }
+  return "critical";
 }

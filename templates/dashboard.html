@@ -24,20 +24,31 @@
 <body>
   <div class="page-shell app-shell">
     <header class="app-frame-header">
-      <div class="app-frame-copy">
-        <p class="eyebrow">Training Decision Dashboard</p>
-        <h1>Training Decision Dashboard</h1>
-        <p class="subcopy app-frame-meta">Plan / Analysis / Sync</p>
-      </div>
-      <div class="utility-stack">
-        <nav id="appSectionNav" class="surface-nav" aria-label="Application sections" hidden>
-          <button class="surface-nav-btn" type="button" data-app-nav="dashboard">Dashboard</button>
-          <button class="surface-nav-btn" type="button" data-app-nav="settings">Settings</button>
-        </nav>
-        <div class="utility-row">
-          <p data-auth-status class="muted-copy session-label">Not signed in</p>
-          <button id="globalLogoutBtn" class="btn btn-secondary" type="button" hidden>Log Out</button>
+      <div class="app-header-row app-header-row-primary">
+        <div class="app-frame-copy">
+          <h1>Training Decision Dashboard</h1>
         </div>
+        <div class="app-header-controls">
+          <div class="utility-row app-header-actions">
+            <nav id="appSectionNav" class="surface-nav app-nav" aria-label="Application sections" hidden>
+              <button class="surface-nav-btn" type="button" data-app-nav="dashboard">Dashboard</button>
+              <button class="surface-nav-btn" type="button" data-app-nav="settings">Settings</button>
+            </nav>
+            <button id="advancedToggleBtn" class="btn btn-secondary utility-toggle" type="button" aria-pressed="false" hidden>
+              Debug Off
+            </button>
+            <button id="globalLogoutBtn" class="btn btn-secondary" type="button" hidden>Log Out</button>
+          </div>
+          <p data-auth-status class="muted-copy session-label">Not signed in</p>
+        </div>
+      </div>
+      <div id="surfaceHeaderRow" class="app-header-row app-header-row-secondary" hidden>
+        <nav id="surfaceNav" class="surface-nav surface-nav-secondary" aria-label="Dashboard views">
+          <button class="surface-nav-btn is-active" type="button" data-view="plan">Plan</button>
+          <button class="surface-nav-btn" type="button" data-view="analysis">Analysis</button>
+          <button class="surface-nav-btn" type="button" data-view="sync">Sync</button>
+          <button id="debugNavBtn" class="surface-nav-btn" type="button" data-view="debug" hidden>Debug</button>
+        </nav>
       </div>
     </header>
 
@@ -59,27 +70,6 @@
       </section>
 
       <section class="app-view app-dashboard-view" data-app-view="dashboard" hidden>
-        <header class="masthead">
-          <div class="masthead-copy">
-            <p class="eyebrow">Dashboard</p>
-            <h1>Dashboard</h1>
-            <p class="subcopy masthead-meta">Plan / Analysis / Sync</p>
-          </div>
-          <div class="utility-stack">
-            <nav id="surfaceNav" class="surface-nav" aria-label="Dashboard views">
-              <button class="surface-nav-btn is-active" type="button" data-view="plan">Plan</button>
-              <button class="surface-nav-btn" type="button" data-view="analysis">Analysis</button>
-              <button class="surface-nav-btn" type="button" data-view="sync">Sync</button>
-              <button id="debugNavBtn" class="surface-nav-btn" type="button" data-view="debug" hidden>Debug</button>
-            </nav>
-            <div class="utility-row">
-              <button id="advancedToggleBtn" class="btn btn-secondary utility-toggle" type="button" aria-pressed="false">
-                Debug Off
-              </button>
-            </div>
-          </div>
-        </header>
-
         <div class="surface-stack">
           <section class="surface-panel is-active" data-view-panel="plan">
             {% include "_plan_view.html" %}
