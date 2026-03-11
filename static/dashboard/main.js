@@ -1,5 +1,6 @@
 import { renderAvoidTodayPanel } from "./components/decision/AvoidTodayPanel.js";
 import { renderBestOptionsPanel } from "./components/decision/BestOptionsPanel.js";
+import { renderNextDaysOutlookPanel } from "./components/decision/NextDaysOutlookPanel.js";
 import { renderTomorrowImpactPanel } from "./components/decision/TomorrowImpactPanel.js";
 import { renderTrainingDecisionCard } from "./components/decision/TrainingDecisionCard.js";
 import { renderWhyRecommendationPanel } from "./components/decision/WhyRecommendationPanel.js";
@@ -11,8 +12,9 @@ import { renderReadinessTrendCard } from "./components/trends/ReadinessTrendCard
 import { renderSyncActionButtons } from "./components/sync/SyncActionButtons.js";
 import { renderSyncStatusBadge, syncLabelForState } from "./components/sync/SyncStatusBadge.js";
 import { renderSyncStatusPanel, syncReasonLabel } from "./components/sync/SyncStatusPanel.js";
-import { applyPlannedSessionForecast, getPlannedSession, setPlannedSession } from "./lib/forecastUtils.js";
+import { getPlannedSession, setPlannedSession } from "./lib/forecastUtils.js";
 import { el, formatDateTime, formatNumber, formatRelativeHours, safeHtml, safeText } from "./lib/formatters.js";
+import { computeNextDaysOutlook } from "./lib/outlookForecast.js";
 
 const APP_CONFIG = window.__APP_CONFIG__ || {};
 const SURFACE_VIEWS = ["plan", "analysis", "sync", "debug"];
@@ -36,6 +38,7 @@ const state = {
   activeTab: "trends",
   advancedMode: loadAdvancedModePreference(),
   syncStatus: null,
+  currentForecast: null,
   syncPollTimer: null,
   syncPollInFlight: false,
   autoSyncKey: null,
@@ -285,15 +288,31 @@ function renderDecisionPanels(payload) {
   renderAvoidTodayPanel(payload?.decision?.avoid || []);
 
   const selectedType = validPlannedSessionType();
+  if (selectedType && selectedType !== getStoredPlannedSession()) {
+    setStoredPlannedSessionType(selectedType);
+  }
   renderBestOptionsPanel(currentBestOptions(), { selectedType });
   bindPlannedSessionButtons();
 
   const selectedOption = currentBestOptions().find((option) => option.type === selectedType) || null;
-  const impact = applyPlannedSessionForecast(payload?.decision, selectedType);
+  const outlook = computeNextDaysOutlook({
+    currentDecision: payload?.decision,
+    currentMetrics: payload?.today,
+    currentLoad: payload?.load,
+    currentComparisons: payload?.comparisons,
+    baseline: payload?.baseline,
+    selectedSession: selectedOption,
+    currentDate: payload?.today?.recommendationDay || payload?.date,
+    mode: payload?.mode,
+    days: 4,
+  });
+
+  state.currentForecast = outlook;
   renderTomorrowImpactPanel({
-    impact,
+    impact: outlook?.tomorrowImpact,
     plannedOptionLabel: selectedOption?.label || null,
   });
+  renderNextDaysOutlookPanel(outlook);
 }
 
 function renderSummary(payload) {
@@ -306,7 +325,7 @@ function renderSummary(payload) {
   el("snapshotModelRecommendation").textContent = safeText(payload?.decision?.primaryRecommendation);
 }
 
-function renderDebug(payload) {
+function renderDebug(payload, forecast) {
   const decisionDebug = payload?.debug || payload?.decision?.debug || {};
   const sync = payload?.sync || null;
   const syncDebug = sync?.debug || null;
@@ -340,6 +359,34 @@ function renderDebug(payload) {
   el("debugList").innerHTML = lines.length
     ? lines.map((line) => `<div class="debug-line">${safeHtml(line)}</div>`).join("")
     : '<div class="muted-copy">No debug trace available for the selected day.</div>';
+
+  const forecastLines = [];
+  if (forecast?.trace?.initialState) {
+    forecastLines.push(`initialRecoveryScore=${formatNumber(forecast.trace.initialState.recoveryScore, 2)}`);
+    forecastLines.push(`initialLoadRatio=${formatNumber(forecast.trace.initialState.loadRatio, 2)}`);
+    forecastLines.push(`initialHardSessionsLast3d=${safeText(forecast.trace.initialState.hardSessionsLast3d)}`);
+    forecastLines.push(`initialHardSessionsLast7d=${safeText(forecast.trace.initialState.hardSessionsLast7d)}`);
+    forecastLines.push(`initialLastSessionType=${safeText(forecast.trace.initialState.lastSessionType)}`);
+    forecastLines.push(`selectedSessionCategory=${safeText(forecast.trace.selectedSessionCategory)}`);
+    forecastLines.push(`selectedSessionType=${safeText(forecast.trace.selectedSessionType)}`);
+  }
+  (forecast?.trace?.days || []).forEach((day) => {
+    forecastLines.push(`${day.label}: recoveryScore=${formatNumber(day.recoveryScore, 2)}`);
+    forecastLines.push(`${day.label}: loadRatio=${formatNumber(day.loadRatio, 2)}`);
+    forecastLines.push(`${day.label}: rawIntensity=${safeText(day.rawIntensityPermission)}`);
+    if (day.qualityBlocks?.length) {
+      forecastLines.push(`${day.label}: blocks=${day.qualityBlocks.join("; ")}`);
+    }
+    forecastLines.push(`${day.label}: recommendation=${safeText(day.recommendation)}`);
+    forecastLines.push(`${day.label}: defaultSession=${safeText(day.defaultSessionCategory)}`);
+  });
+
+  const forecastTarget = el("forecastDebugList");
+  if (forecastTarget) {
+    forecastTarget.innerHTML = forecastLines.length
+      ? forecastLines.map((line) => `<div class="debug-line">${safeHtml(line)}</div>`).join("")
+      : '<div class="muted-copy">No forecast trace available for the selected day.</div>';
+  }
 }
 
 function renderHeatmap(rows, activeDate) {
@@ -437,11 +484,13 @@ function renderDashboard() {
   renderSyncUi(payload?.sync || state.syncStatus);
 
   if (!payload || !payload.history?.rows?.length) {
+    state.currentForecast = null;
     renderTrainingDecisionCard({ payload: payload || {} });
     renderWhyRecommendationPanel([]);
     renderAvoidTodayPanel([]);
     renderBestOptionsPanel([]);
     renderTomorrowImpactPanel({ impact: null, plannedOptionLabel: null });
+    renderNextDaysOutlookPanel(null);
     renderBaselineComparisonCard([]);
     renderReadinessTrendCard([], null);
     renderLoadTrendCard([], null);
@@ -451,7 +500,7 @@ function renderDashboard() {
     renderModeUnits({});
     renderPrompt({});
     renderSummary(payload || {});
-    renderDebug(payload || {});
+    renderDebug(payload || {}, state.currentForecast);
     return;
   }
 
@@ -465,7 +514,7 @@ function renderDashboard() {
   renderModeUnits(payload);
   renderPrompt(payload);
   renderSummary(payload);
-  renderDebug(payload);
+  renderDebug(payload, state.currentForecast);
 }
 
 async function refreshSyncStatus({ reloadDashboardOnTerminal = false } = {}) {
@@ -662,6 +711,7 @@ function bindPlannedSessionButtons() {
       const sessionType = button.dataset.sessionType;
       setStoredPlannedSessionType(sessionType);
       renderDecisionPanels(state.dashboard || {});
+      renderDebug(state.dashboard || {}, state.currentForecast);
     });
   });
 }

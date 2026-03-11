@@ -817,7 +817,8 @@ th {
 .avoid-list,
 .debug-list,
 .decision-session-grid,
-.snapshot-grid {
+.snapshot-grid,
+.outlook-list {
   display: grid;
   gap: 12px;
 }
@@ -951,6 +952,76 @@ th {
   background: rgba(255, 255, 255, 0.04);
 }
 
+.outlook-list {
+  margin-top: 6px;
+}
+
+.outlook-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(173, 212, 202, 0.08);
+  background: rgba(3, 12, 17, 0.64);
+}
+
+.outlook-row[data-tone="positive"] {
+  border-color: rgba(99, 230, 190, 0.22);
+}
+
+.outlook-row[data-tone="warning"] {
+  border-color: rgba(255, 209, 102, 0.2);
+}
+
+.outlook-row[data-tone="critical"] {
+  border-color: rgba(255, 126, 114, 0.22);
+}
+
+.outlook-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.outlook-copy strong {
+  font-size: 0.96rem;
+}
+
+.outlook-label {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-family: "IBM Plex Mono", monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.outlook-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 88px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.outlook-chip[data-tone="positive"] {
+  color: var(--good);
+}
+
+.outlook-chip[data-tone="warning"] {
+  color: var(--warn);
+}
+
+.outlook-chip[data-tone="critical"] {
+  color: var(--danger);
+}
+
 .metric-delta-bar,
 .snapshot-card,
 .sync-panel {
@@ -1010,6 +1081,12 @@ th {
 .debug-line {
   font-family: "IBM Plex Mono", monospace;
   font-size: 0.8rem;
+}
+
+.debug-section {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(173, 212, 202, 0.08);
 }
 
 .sync-action-row {
@@ -1130,5 +1207,14 @@ th {
 
   .snapshot-grid {
     grid-template-columns: 1fr;
+  }
+
+  .outlook-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .outlook-chip {
+    min-width: 0;
   }
 }
