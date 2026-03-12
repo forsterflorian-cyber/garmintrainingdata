@@ -10,42 +10,60 @@ const OPTIONS_EMPTY_COPY = "No session options are available for the selected da
 
 export function renderActivitiesDaySurface(
   payload = {},
-  { availableDays = [], selectedDate = null, onSelectDay = null, mode = "hybrid" } = {},
+  { availableDays = [], selectedDate = null, onSelectDay = null, mode = "hybrid", todayDate = null } = {},
 ) {
   const resolvedDate = firstDate(selectedDate, payload?.date);
-  renderDaySelector(availableDays, resolvedDate, onSelectDay);
-  renderSelectionMeta(availableDays, resolvedDate);
-  renderActualActivities(payload, resolvedDate);
-  renderRecommendation(payload, resolvedDate, mode);
-  renderBaseline(payload, resolvedDate);
+  const effectiveSelectedDate = renderDaySelector(availableDays, resolvedDate, onSelectDay, todayDate);
+  renderSelectionMeta(availableDays, effectiveSelectedDate);
+  renderActualActivities(payload, effectiveSelectedDate);
+  renderRecommendation(payload, effectiveSelectedDate, mode);
+  renderBaseline(payload, effectiveSelectedDate);
 }
 
-function renderDaySelector(availableDays, selectedDate, onSelectDay) {
+function renderDaySelector(availableDays, selectedDate, onSelectDay, todayDate) {
   const target = el("activitiesDaySelect");
+  const previousButton = el("activitiesPrevDayBtn");
+  const nextButton = el("activitiesNextDayBtn");
   if (!target) {
-    return;
+    return selectedDate;
   }
 
-  const normalizedDays = sanitizeDayOptions(availableDays);
+  const normalizedDays = buildDayOptions(availableDays, todayDate);
   if (!normalizedDays.length) {
     target.disabled = true;
     target.innerHTML = '<option value="">No days available</option>';
     target.value = "";
     target.onchange = null;
-    return;
+    syncDayNavigationButtons(previousButton, nextButton);
+    return selectedDate;
   }
+
+  const resolvedDate = normalizedDays.some((day) => day.date === selectedDate)
+    ? selectedDate
+    : normalizedDays[0].date;
+  const selectedIndex = normalizedDays.findIndex((day) => day.date === resolvedDate);
 
   target.disabled = false;
   target.innerHTML = normalizedDays.map((day) => `
-    <option value="${safeHtml(day)}">${safeHtml(day)}</option>
+    <option value="${safeHtml(day.date)}">${safeHtml(day.label)}</option>
   `).join("");
-  target.value = normalizedDays.includes(selectedDate) ? selectedDate : normalizedDays[normalizedDays.length - 1];
+  target.value = resolvedDate;
   target.onchange = (event) => {
     const nextDate = event?.target?.value;
     if (typeof onSelectDay === "function" && nextDate) {
       onSelectDay(nextDate);
     }
   };
+
+  syncDayNavigationButtons(
+    previousButton,
+    nextButton,
+    normalizedDays[selectedIndex + 1]?.date || null,
+    normalizedDays[selectedIndex - 1]?.date || null,
+    onSelectDay,
+  );
+
+  return resolvedDate;
 }
 
 function renderSelectionMeta(availableDays, selectedDate) {
@@ -61,7 +79,7 @@ function renderSelectionMeta(availableDays, selectedDate) {
   }
 
   target.textContent = selectedDate
-    ? `Inspecting ${selectedDate}. Dropdown order stays chronological.`
+    ? `Inspecting ${selectedDate}. Newest days stay at the top.`
     : "Select a day to inspect historical activity, recommendation, and baseline data.";
 }
 
@@ -228,7 +246,7 @@ function sanitizeDayOptions(availableDays) {
   if (!Array.isArray(availableDays)) {
     return [];
   }
-  return availableDays
+  return Array.from(new Set(availableDays
     .map((day) => {
       if (typeof day === "string") {
         return day.trim();
@@ -238,7 +256,53 @@ function sanitizeDayOptions(availableDays) {
       }
       return "";
     })
-    .filter(Boolean);
+    .filter(Boolean)))
+    .sort((left, right) => right.localeCompare(left));
+}
+
+function buildDayOptions(availableDays, todayDate) {
+  return sanitizeDayOptions(availableDays).map((date) => ({
+    date,
+    label: labelForDay(date, todayDate),
+  }));
+}
+
+function labelForDay(date, todayDate) {
+  if (!todayDate) {
+    return date;
+  }
+  if (date === todayDate) {
+    return "Today";
+  }
+  if (date === shiftIsoDate(todayDate, -1)) {
+    return "Yesterday";
+  }
+  return date;
+}
+
+function shiftIsoDate(date, days) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(date || "").trim());
+  if (!match) {
+    return null;
+  }
+  const shiftedDate = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]) + days));
+  return shiftedDate.toISOString().slice(0, 10);
+}
+
+function syncDayNavigationButtons(previousButton, nextButton, previousDate = null, nextDate = null, onSelectDay = null) {
+  if (previousButton) {
+    previousButton.disabled = !previousDate;
+    previousButton.onclick = previousDate && typeof onSelectDay === "function"
+      ? () => onSelectDay(previousDate)
+      : null;
+  }
+
+  if (nextButton) {
+    nextButton.disabled = !nextDate;
+    nextButton.onclick = nextDate && typeof onSelectDay === "function"
+      ? () => onSelectDay(nextDate)
+      : null;
+  }
 }
 
 function renderActivityCard(activity, comparison) {

@@ -327,8 +327,21 @@ textarea {
   align-items: flex-end;
 }
 
+.activities-day-toolbar,
+.activities-day-nav {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+}
+
 .activities-day-field {
   min-width: 220px;
+}
+
+.activities-day-nav .btn {
+  width: auto;
+  min-width: 46px;
+  padding-inline: 14px;
 }
 
 .panel,
@@ -375,6 +388,11 @@ textarea {
   display: grid;
   gap: 8px;
   margin-top: 16px;
+}
+
+.toolbar-field {
+  display: grid;
+  gap: 8px;
 }
 
 .field span,
@@ -934,6 +952,18 @@ th {
   min-width: 150px;
 }
 
+.training-focus-field {
+  min-width: 240px;
+}
+
+.toolbar-help {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  max-width: 30ch;
+}
+
 .app-header-actions .btn {
   padding: 8px 14px;
 }
@@ -943,6 +973,53 @@ th {
   gap: 12px;
 }
 
+.dashboard-stage-shell {
+  position: relative;
+  width: min(100%, 1200px);
+  margin-inline: auto;
+}
+
+.dashboard-loading-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding: 14px;
+  border-radius: calc(var(--radius-xl) + 4px);
+  background: rgba(7, 19, 26, 0.34);
+  backdrop-filter: blur(2px);
+  pointer-events: none;
+}
+
+.dashboard-loading-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(173, 212, 202, 0.16);
+  background: rgba(4, 15, 20, 0.88);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.dashboard-loading-spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 2px solid rgba(255, 184, 92, 0.22);
+  border-top-color: var(--accent);
+  animation: dashboard-spin 700ms linear infinite;
+}
+
+@keyframes dashboard-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .analysis-toolbar {
   justify-content: flex-end;
   align-items: flex-end;
@@ -950,6 +1027,18 @@ th {
 
 .analysis-toolbar .toolbar-field {
   min-width: 150px;
+}
+
+.analysis-side-stack {
+  display: grid;
+  gap: 16px;
+}
+
+.analysis-side-stack h3 {
+  margin: 0;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 1.16rem;
+  letter-spacing: -0.03em;
 }
 
 .plan-surface {
@@ -1939,6 +2028,11 @@ th {
     justify-content: stretch;
   }
 
+  .activities-day-toolbar,
+  .activities-day-nav {
+    width: 100%;
+  }
+
   .surface-nav-btn {
     flex: 1 1 0;
     text-align: center;
@@ -1952,6 +2046,11 @@ th {
   .toolbar-field,
   .toolbar-field select {
     width: 100%;
+  }
+
+  .activities-day-nav .btn {
+    width: auto;
+    flex: 0 0 auto;
   }
 
   .app-header-actions .btn {

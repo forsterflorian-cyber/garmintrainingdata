@@ -56,14 +56,15 @@
             <span>Range</span>
             <select id="rangeSelect"></select>
           </label>
-          <label class="toolbar-field">
-            <span>Mode</span>
-            <select id="modeSelect">
+          <label class="toolbar-field training-focus-field">
+            <span>Training Focus</span>
+            <select id="modeSelect" aria-describedby="modeHelpText">
               <option value="hybrid">Hybrid</option>
-              <option value="run">Run Focus</option>
-              <option value="bike">Bike Focus</option>
-              <option value="strength">Strength Focus</option>
+              <option value="run">Run</option>
+              <option value="bike">Bike</option>
+              <option value="strength">Strength</option>
             </select>
+            <small id="modeHelpText" class="toolbar-help">Hybrid: Balanced endurance and strength training</small>
           </label>
         </div>
       </div>
@@ -87,30 +88,39 @@
       </section>
 
       <section class="app-view app-dashboard-view" data-app-view="dashboard" hidden>
-        <div class="surface-stack">
-          <section class="surface-panel is-active" data-view-panel="plan">
-            {% include "_plan_view.html" %}
-          </section>
+        <div id="dashboardStage" class="dashboard-stage-shell" aria-busy="false">
+          <div id="dashboardLoadingOverlay" class="dashboard-loading-overlay" hidden aria-hidden="true">
+            <div class="dashboard-loading-indicator" role="status" aria-live="polite">
+              <span class="dashboard-loading-spinner" aria-hidden="true"></span>
+              <span>Updating dashboard...</span>
+            </div>
+          </div>
 
-          <section class="surface-panel" data-view-panel="analysis" hidden>
-            {% include "_analysis_view.html" %}
-          </section>
+          <div class="surface-stack">
+            <section class="surface-panel is-active" data-view-panel="plan">
+              {% include "_plan_view.html" %}
+            </section>
 
-          <section class="surface-panel" data-view-panel="trends" hidden>
-            {% include "_trends_view.html" %}
-          </section>
+            <section class="surface-panel" data-view-panel="analysis" hidden>
+              {% include "_analysis_view.html" %}
+            </section>
 
-          <section class="surface-panel" data-view-panel="activities" hidden>
-            {% include "_activities_view.html" %}
-          </section>
+            <section class="surface-panel" data-view-panel="trends" hidden>
+              {% include "_trends_view.html" %}
+            </section>
 
-          <section class="surface-panel" data-view-panel="sync" hidden>
-            {% include "_sync_view.html" %}
-          </section>
+            <section class="surface-panel" data-view-panel="activities" hidden>
+              {% include "_activities_view.html" %}
+            </section>
 
-          <section id="debugSurface" class="surface-panel surface-panel-debug" data-view-panel="debug" hidden>
-            {% include "_debug_view.html" %}
-          </section>
+            <section class="surface-panel" data-view-panel="sync" hidden>
+              {% include "_sync_view.html" %}
+            </section>
+
+            <section id="debugSurface" class="surface-panel surface-panel-debug" data-view-panel="debug" hidden>
+              {% include "_debug_view.html" %}
+            </section>
+          </div>
         </div>
       </section>
 

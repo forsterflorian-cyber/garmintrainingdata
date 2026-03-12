@@ -15,10 +15,16 @@
         <p class="eyebrow">Activities</p>
         <h2>Selected Day</h2>
       </div>
-      <label class="toolbar-field activities-day-field">
-        <span>Day</span>
-        <select id="activitiesDaySelect" aria-label="Select activity day"></select>
-      </label>
+      <div class="activities-day-toolbar">
+        <div class="activities-day-nav" aria-label="Selected day navigation">
+          <button id="activitiesPrevDayBtn" class="btn btn-secondary day-nav-btn" type="button" aria-label="Go to previous day">&lt;</button>
+          <label class="toolbar-field activities-day-field">
+            <span>Day</span>
+            <select id="activitiesDaySelect" aria-label="Select activity day"></select>
+          </label>
+          <button id="activitiesNextDayBtn" class="btn btn-secondary day-nav-btn" type="button" aria-label="Go to next day">&gt;</button>
+        </div>
+      </div>
     </div>
 
     <p id="activitiesSelectionMeta" class="muted-copy activities-selection-meta">Select a day to inspect.</p>

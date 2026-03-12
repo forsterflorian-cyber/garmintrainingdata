@@ -9,7 +9,7 @@ import { chromium } from "playwright-core";
 
 const REPO_ROOT = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 
-test("activities dropdown switches day content without reordering options", async (t) => {
+test("range changes show the loading overlay and mode changes refresh helper copy", async (t) => {
   const browserExecutablePath = await resolveBrowserExecutablePath();
   if (!browserExecutablePath) {
     t.skip("Chrome or Edge not available for browser integration test.");
@@ -19,7 +19,7 @@ test("activities dropdown switches day content without reordering options", asyn
   const server = http.createServer(async (request, response) => {
     try {
       const requestPath = new URL(request.url, "http://127.0.0.1").pathname;
-      const relativePath = requestPath === "/" ? "/tests/fixtures/activities-day-flow.html" : requestPath;
+      const relativePath = requestPath === "/" ? "/tests/fixtures/dashboard-controls.html" : requestPath;
       const safePath = path.normalize(relativePath).replace(/^([/\\])+/, "");
       const filePath = path.join(REPO_ROOT, safePath);
       if (!filePath.startsWith(REPO_ROOT)) {
@@ -50,44 +50,32 @@ test("activities dropdown switches day content without reordering options", asyn
 
   try {
     const page = await browser.newPage();
-    await page.goto(`${baseUrl}/tests/fixtures/activities-day-flow.html`);
+    await page.goto(`${baseUrl}/tests/fixtures/dashboard-controls.html`);
 
-    const select = page.locator("#activitiesDaySelect");
-    const previousButton = page.locator("#activitiesPrevDayBtn");
-    const nextButton = page.locator("#activitiesNextDayBtn");
-    await select.waitFor();
-    const orderBefore = await select.locator("option").evaluateAll((options) => options.map((option) => option.value));
-    const labelsBefore = await select.locator("option").evaluateAll((options) => options.map((option) => option.textContent));
+    const overlay = page.locator("#dashboardLoadingOverlay");
+    const rangeSelect = page.locator("#rangeSelect");
+    const modeSelect = page.locator("#modeSelect");
+    const modeHelp = page.locator("#modeHelpText");
 
-    assert.deepEqual(orderBefore, ["2026-03-11", "2026-03-10", "2026-03-09", "2026-03-08"]);
-    assert.deepEqual(labelsBefore, ["Today", "Yesterday", "2026-03-09", "2026-03-08"]);
-    await assertDayState(page, "2026-03-10", /Track Intervals/, /Threshold OK/);
+    assert.equal(await overlay.isHidden(), true);
+    assert.match(await modeHelp.textContent(), /Hybrid: Balanced endurance and strength training/);
 
-    await select.selectOption("2026-03-09");
-    const orderAfter = await select.locator("option").evaluateAll((options) => options.map((option) => option.value));
+    await rangeSelect.selectOption("84");
+    await page.waitForFunction(() => !document.getElementById("dashboardLoadingOverlay").hidden);
+    assert.equal(await overlay.isVisible(), true);
+    await page.waitForFunction(() => document.getElementById("dashboardLoadingOverlay").hidden);
+    assert.equal(await page.locator("#loadStatus").textContent(), "Loaded range");
 
-    assert.deepEqual(orderAfter, orderBefore);
-    await assertDayState(page, "2026-03-09", /Lunch Ride/, /Moderate only/);
-    assert.match(await page.locator("#activitiesSelectionMeta").textContent(), /Newest days stay at the top/);
-
-    await previousButton.click();
-    await assertDayState(page, "2026-03-08", /No activities recorded/, /Easy Aerobic/);
-
-    await nextButton.click();
-    await assertDayState(page, "2026-03-09", /Lunch Ride/, /Moderate only/);
+    await modeSelect.selectOption("bike");
+    await page.waitForFunction(() => !document.getElementById("dashboardLoadingOverlay").hidden);
+    assert.match(await modeHelp.textContent(), /Bike: Cycling-focused training/);
+    await page.waitForFunction(() => document.getElementById("dashboardLoadingOverlay").hidden);
+    assert.equal(await page.locator("#loadStatus").textContent(), "Loaded mode");
   } finally {
     await browser.close();
     await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
   }
 });
-
-async function assertDayState(page, day, activityPattern, recommendationPattern) {
-  assert.equal(await page.locator("#activitiesDaySelect").inputValue(), day);
-  assert.equal(await page.locator("#activitiesActualHeadline").textContent(), `Activities On ${day}`);
-  assert.equal(await page.locator("#activitiesRecommendationHeadline").textContent(), `Recommendation For ${day}`);
-  assert.match(await page.locator("#activitiesActualList").textContent(), activityPattern);
-  assert.match(await page.locator("#activitiesRecommendationSummary").textContent(), recommendationPattern);
-}
 
 async function resolveBrowserExecutablePath() {
   const candidates = [

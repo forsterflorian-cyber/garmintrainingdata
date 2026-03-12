@@ -7,6 +7,8 @@ import { renderWhyRecommendationPanel } from "./components/decision/WhyRecommend
 import { renderActivitiesDaySurface } from "./components/activities/ActivitiesDaySurface.js";
 import { setAuthStatus, setGarminStatus } from "./components/layout/DashboardHeader.js";
 import { hydrateRangeSelect } from "./components/layout/FocusFilters.js";
+import { setDashboardLoadingState, syncTrainingFocusHelp } from "./components/layout/DashboardUiState.js";
+import { renderBaselineComparisonCard } from "./components/metrics/BaselineComparisonCard.js";
 import { renderLoadTrendCard } from "./components/trends/LoadTrendCard.js";
 import { renderReadinessTrendCard } from "./components/trends/ReadinessTrendCard.js";
 import { renderSyncActionButtons } from "./components/sync/SyncActionButtons.js";
@@ -129,6 +131,7 @@ const state = {
   currentForecast: null,
   syncPollTimer: null,
   syncPollInFlight: false,
+  dashboardLoadRequestId: 0,
   autoSyncKey: null,
   accountDeletionPending: false,
   sessionRestorePending: isAuthCallbackPath(window.location.pathname),
@@ -1145,10 +1148,14 @@ function renderSummary(payload) {
   el("snapshotModelRecommendation").textContent = safeText(payload?.decision?.primaryRecommendation);
   if (el("baselineReferenceCopy")) {
     const sampleDays = Number(payload?.reference?.baselineSampleDays || 0);
-    const baselineDays = safeText(payload?.reference?.baselineDays);
-    el("baselineReferenceCopy").textContent = payload?.reference?.baselineSource === "rolling"
-      ? `Rolling ${baselineDays}-day reference ending before the focus day. Load ratio stays on 7d / 28d. ${sampleDays ? `Samples used: ${sampleDays} days.` : ""}`.trim()
-      : `Stored Garmin baseline shown because the ${baselineDays}-day range does not yet have enough prior samples. Load ratio stays on 7d / 28d.`;
+    const baselineDays = safeText(payload?.reference?.baselineDays, "");
+    if (payload?.reference?.baselineSource === "rolling" && baselineDays) {
+      el("baselineReferenceCopy").textContent = `Rolling ${baselineDays}-day reference ending before today. Load ratio stays on 7d / 28d. ${sampleDays ? `Samples used: ${sampleDays} days.` : ""}`.trim();
+    } else if (baselineDays) {
+      el("baselineReferenceCopy").textContent = `Stored Garmin baseline shown because the ${baselineDays}-day range does not yet have enough prior samples. Load ratio stays on 7d / 28d.`;
+    } else {
+      el("baselineReferenceCopy").textContent = "Reference window follows the selected range. Load ratio stays on 7d / 28d.";
+    }
   }
 }
 
@@ -1242,6 +1249,10 @@ function renderPlanSurface(payload) {
 
 function renderAnalysisSurface(payload) {
   renderWhyRecommendationPanel(payload?.decision?.why || []);
+  renderBaselineComparisonCard(payload?.baselineBars || [], {
+    targetId: "analysisBaselineMetricList",
+    emptyCopy: "No baseline comparison available for today.",
+  });
   renderPrompt(payload || {});
   renderSummary(payload || {});
 }
@@ -1261,6 +1272,7 @@ function renderActivitiesSurface(payload, availableDays) {
     selectedDate: state.activitiesDate,
     onSelectDay: setActivitiesDay,
     mode: state.mode,
+    todayDate: state.todayDate || state.planDashboard?.date || null,
   });
 }
 
@@ -1394,14 +1406,23 @@ async function loadDashboard({ skipAutoSync = false } = {}) {
     return;
   }
 
+  const requestId = ++state.dashboardLoadRequestId;
+  setDashboardLoadingState(true);
+
   try {
     const planPayload = await apiGet(dashboardUrlForDate(state.todayDate));
+    if (requestId !== state.dashboardLoadRequestId) {
+      return;
+    }
     const resolvedTodayDate = planPayload?.date || state.todayDate;
     const resolvedActivitiesDate = resolveActivitiesDate(state.activitiesDate, planPayload);
     let activitiesPayload = planPayload;
 
     if (resolvedActivitiesDate && resolvedActivitiesDate !== resolvedTodayDate) {
       activitiesPayload = await apiGet(dashboardUrlForDate(resolvedActivitiesDate));
+      if (requestId !== state.dashboardLoadRequestId) {
+        return;
+      }
     }
 
     state.planDashboard = planPayload;
@@ -1429,11 +1450,18 @@ async function loadDashboard({ skipAutoSync = false } = {}) {
       maybeAutoSync();
     }
   } catch (error) {
+    if (requestId !== state.dashboardLoadRequestId) {
+      return;
+    }
     if (isUnauthorizedError(error)) {
       await handleUnauthorizedSession("Session expired. Sign in again.");
       return;
     }
     setGarminStatus(`Error: ${error.message}`);
+  } finally {
+    if (requestId === state.dashboardLoadRequestId) {
+      setDashboardLoadingState(false);
+    }
   }
 }
 
@@ -1451,7 +1479,9 @@ function setLoggedOutState({ authMessage = "Not signed in", garminMessage = "Sig
   state.currentForecast = null;
   state.syncStatus = null;
   state.autoSyncKey = null;
+  state.dashboardLoadRequestId += 1;
   stopSyncPolling();
+  setDashboardLoadingState(false);
   resetAccountDeletionUi();
   renderDashboard();
   renderSyncStatusPanel({}, "settingsSyncStatusPanel");
@@ -1721,6 +1751,7 @@ function bindEvents() {
   bindAdvancedToggle();
   bindAppNavigation();
   hydrateRangeSelect(APP_CONFIG.rangeFilters || [7, 14, 28, 84, 365], state.rangeDays);
+  syncTrainingFocusHelp(state.mode);
 
   document.querySelectorAll("[data-auth-action]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -1796,15 +1827,23 @@ function bindEvents() {
     });
   }
 
-  el("rangeSelect").addEventListener("change", (event) => {
-    state.rangeDays = Number(event.target.value);
-    void loadDashboard();
-  });
+  const rangeSelect = el("rangeSelect");
+  if (rangeSelect) {
+    rangeSelect.addEventListener("change", (event) => {
+      state.rangeDays = Number(event.target.value);
+      void loadDashboard();
+    });
+  }
 
-  el("modeSelect").addEventListener("change", (event) => {
-    state.mode = event.target.value;
-    void loadDashboard({ skipAutoSync: true });
-  });
+  const modeSelect = el("modeSelect");
+  if (modeSelect) {
+    modeSelect.value = state.mode;
+    modeSelect.addEventListener("change", (event) => {
+      state.mode = event.target.value;
+      syncTrainingFocusHelp(state.mode);
+      void loadDashboard({ skipAutoSync: true });
+    });
+  }
 
   el("copyPromptBtn").addEventListener("click", async () => {
     try {

@@ -7,10 +7,14 @@
 </head>
 <body>
   <section class="panel">
-    <label>
-      Day
-      <select id="activitiesDaySelect" aria-label="Select activity day"></select>
-    </label>
+    <div>
+      <button id="activitiesPrevDayBtn" type="button" aria-label="Go to previous day">&lt;</button>
+      <label>
+        Day
+        <select id="activitiesDaySelect" aria-label="Select activity day"></select>
+      </label>
+      <button id="activitiesNextDayBtn" type="button" aria-label="Go to next day">&gt;</button>
+    </div>
     <p id="activitiesSelectionMeta"></p>
   </section>
 
@@ -160,6 +164,7 @@
       renderActivitiesDaySurface(payloads[selectedDate], {
         availableDays,
         selectedDate,
+        todayDate: "2026-03-11",
         onSelectDay(nextDate) {
           selectedDate = nextDate;
           render();

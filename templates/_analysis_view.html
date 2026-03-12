@@ -21,49 +21,62 @@
   </section>
 
   <section class="panel span-5">
-    <div class="panel-head-space">
-      <div>
-        <p class="eyebrow">Today</p>
-        <h2>Decision Context</h2>
-        <p class="muted-copy">Snapshot values stay fixed to the current dashboard day.</p>
-      </div>
-      <div class="mini-summary">
+    <div class="analysis-side-stack">
+      <div class="panel-head-space">
         <div>
-          <span>Avg Readiness</span>
-          <strong id="summaryAverageReadiness">-</strong>
+          <p class="eyebrow">Today</p>
+          <h2>Baseline Comparison</h2>
+          <p id="baselineReferenceCopy" class="muted-copy">Reference window follows the selected range.</p>
         </div>
-        <div>
-          <span>Avg Load</span>
-          <strong id="summaryAverageLoad">-</strong>
+        <div class="mini-summary">
+          <div>
+            <span>Avg Readiness</span>
+            <strong id="summaryAverageReadiness">-</strong>
+          </div>
+          <div>
+            <span>Avg Load</span>
+            <strong id="summaryAverageLoad">-</strong>
+          </div>
         </div>
       </div>
+      <div id="analysisBaselineMetricList" class="baseline-grid"></div>
+
+      <div class="analysis-divider"></div>
+
+      <div class="panel-head-space">
+        <div>
+          <p class="eyebrow">Today Snapshot</p>
+          <h3>Decision Context</h3>
+          <p class="muted-copy">Snapshot values stay fixed to the current dashboard day.</p>
+        </div>
+      </div>
+      <div class="snapshot-grid">
+        <article class="snapshot-card">
+          <span>Focus Day</span>
+          <strong id="snapshotFocusDate">-</strong>
+        </article>
+        <article class="snapshot-card">
+          <span>Range</span>
+          <strong id="snapshotWindow">-</strong>
+        </article>
+        <article class="snapshot-card">
+          <span>7d / 28d ratio</span>
+          <strong id="snapshotRatio">-</strong>
+        </article>
+        <article class="snapshot-card">
+          <span>Load</span>
+          <strong id="snapshotStress">-</strong>
+        </article>
+        <article class="snapshot-card">
+          <span>Sync</span>
+          <strong id="snapshotSyncStatus">-</strong>
+        </article>
+        <article class="snapshot-card">
+          <span>Recommendation</span>
+          <strong id="snapshotModelRecommendation">-</strong>
+        </article>
+      </div>
+      <p id="snapshotSyncMeta" class="muted-copy">No Sync Data Yet.</p>
     </div>
-    <div class="snapshot-grid">
-      <article class="snapshot-card">
-        <span>Focus Day</span>
-        <strong id="snapshotFocusDate">-</strong>
-      </article>
-      <article class="snapshot-card">
-        <span>Range</span>
-        <strong id="snapshotWindow">-</strong>
-      </article>
-      <article class="snapshot-card">
-        <span>7d / 28d ratio</span>
-        <strong id="snapshotRatio">-</strong>
-      </article>
-      <article class="snapshot-card">
-        <span>Load</span>
-        <strong id="snapshotStress">-</strong>
-      </article>
-      <article class="snapshot-card">
-        <span>Sync</span>
-        <strong id="snapshotSyncStatus">-</strong>
-      </article>
-      <article class="snapshot-card">
-        <span>Recommendation</span>
-        <strong id="snapshotModelRecommendation">-</strong>
-      </article>
-    </div>
-    <p id="snapshotSyncMeta" class="muted-copy">No Sync Data Yet.</p>
   </section>
 </div>

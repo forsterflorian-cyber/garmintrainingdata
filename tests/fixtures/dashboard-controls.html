@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Dashboard Controls Fixture</title>
+</head>
+<body>
+  <section id="dashboardStage" aria-busy="false">
+    <div id="dashboardLoadingOverlay" hidden aria-hidden="true">Updating dashboard...</div>
+
+    <label>
+      Range
+      <select id="rangeSelect">
+        <option value="28">28 Days</option>
+        <option value="84">84 Days</option>
+      </select>
+    </label>
+
+    <label>
+      Training Focus
+      <select id="modeSelect" aria-describedby="modeHelpText">
+        <option value="hybrid">Hybrid</option>
+        <option value="run">Run</option>
+        <option value="bike">Bike</option>
+        <option value="strength">Strength</option>
+      </select>
+      <small id="modeHelpText">Hybrid: Balanced endurance and strength training</small>
+    </label>
+
+    <p id="loadStatus">Idle</p>
+  </section>
+
+  <script type="module">
+    import { setDashboardLoadingState, syncTrainingFocusHelp } from "/static/dashboard/components/layout/DashboardUiState.js";
+
+    const rangeSelect = document.getElementById("rangeSelect");
+    const modeSelect = document.getElementById("modeSelect");
+    const loadStatus = document.getElementById("loadStatus");
+
+    syncTrainingFocusHelp("hybrid");
+
+    async function simulateDashboardLoad(reason) {
+      setDashboardLoadingState(true);
+      loadStatus.textContent = `Loading ${reason}`;
+      await new Promise((resolve) => window.setTimeout(resolve, 120));
+      loadStatus.textContent = `Loaded ${reason}`;
+      setDashboardLoadingState(false);
+    }
+
+    rangeSelect.addEventListener("change", () => {
+      void simulateDashboardLoad("range");
+    });
+
+    modeSelect.addEventListener("change", () => {
+      syncTrainingFocusHelp(modeSelect.value);
+      void simulateDashboardLoad("mode");
+    });
+  </script>
+</body>
+</html>

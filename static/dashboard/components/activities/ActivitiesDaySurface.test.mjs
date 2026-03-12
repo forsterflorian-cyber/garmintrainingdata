@@ -11,6 +11,7 @@ function createFakeElement() {
     disabled: false,
     value: "",
     onchange: null,
+    onclick: null,
   };
 }
 
@@ -29,9 +30,11 @@ function withFakeDocument(elements, callback) {
   }
 }
 
-test("activities dropdown keeps chronological order and renders selected-day content", () => {
+test("activities dropdown shows newest days first and renders selected-day content", () => {
   const elements = {
     activitiesDaySelect: createFakeElement(),
+    activitiesPrevDayBtn: createFakeElement(),
+    activitiesNextDayBtn: createFakeElement(),
     activitiesSelectionMeta: createFakeElement(),
     activitiesActualHeadline: createFakeElement(),
     activitiesActualSummary: createFakeElement(),
@@ -96,14 +99,19 @@ test("activities dropdown keeps chronological order and renders selected-day con
           { date: "2026-03-10" },
         ],
         selectedDate: "2026-03-09",
+        todayDate: "2026-03-10",
       },
     );
   });
 
   const optionMarkup = elements.activitiesDaySelect.innerHTML;
-  assert(optionMarkup.indexOf("2026-03-08") < optionMarkup.indexOf("2026-03-09"));
-  assert(optionMarkup.indexOf("2026-03-09") < optionMarkup.indexOf("2026-03-10"));
+  assert(optionMarkup.indexOf('value="2026-03-10"') < optionMarkup.indexOf('value="2026-03-09"'));
+  assert(optionMarkup.indexOf('value="2026-03-09"') < optionMarkup.indexOf('value="2026-03-08"'));
+  assert.match(optionMarkup, />Today</);
+  assert.match(optionMarkup, />Yesterday</);
   assert.equal(elements.activitiesDaySelect.value, "2026-03-09");
+  assert.equal(elements.activitiesPrevDayBtn.disabled, false);
+  assert.equal(elements.activitiesNextDayBtn.disabled, false);
   assert.equal(elements.activitiesActualHeadline.textContent, "Activities On 2026-03-09");
   assert.equal(elements.activitiesRecommendationHeadline.textContent, "Recommendation For 2026-03-09");
   assert.equal(elements.activitiesBaselineHeadline.textContent, "2026-03-09 Vs Baseline");
@@ -118,6 +126,8 @@ test("activities dropdown keeps chronological order and renders selected-day con
 test("activities dropdown order stays stable across selection changes", () => {
   const elements = {
     activitiesDaySelect: createFakeElement(),
+    activitiesPrevDayBtn: createFakeElement(),
+    activitiesNextDayBtn: createFakeElement(),
     activitiesSelectionMeta: createFakeElement(),
     activitiesActualHeadline: createFakeElement(),
     activitiesActualSummary: createFakeElement(),
@@ -141,12 +151,14 @@ test("activities dropdown order stays stable across selection changes", () => {
     renderActivitiesDaySurface({ date: "2026-03-10", detail: {}, decision: {}, baselineBars: [] }, {
       availableDays,
       selectedDate: "2026-03-10",
+      todayDate: "2026-03-10",
     });
     const before = elements.activitiesDaySelect.innerHTML;
 
     renderActivitiesDaySurface({ date: "2026-03-08", detail: {}, decision: {}, baselineBars: [] }, {
       availableDays,
       selectedDate: "2026-03-08",
+      todayDate: "2026-03-10",
     });
 
     assert.equal(elements.activitiesDaySelect.innerHTML, before);
@@ -154,9 +166,52 @@ test("activities dropdown order stays stable across selection changes", () => {
   });
 });
 
+test("activities prev and next buttons move within the available day list", () => {
+  const elements = {
+    activitiesDaySelect: createFakeElement(),
+    activitiesPrevDayBtn: createFakeElement(),
+    activitiesNextDayBtn: createFakeElement(),
+    activitiesSelectionMeta: createFakeElement(),
+    activitiesActualHeadline: createFakeElement(),
+    activitiesActualSummary: createFakeElement(),
+    activitiesActualList: createFakeElement(),
+    activitiesRecommendationHeadline: createFakeElement(),
+    activitiesRecommendationSummary: createFakeElement(),
+    activitiesRecommendationWhy: createFakeElement(),
+    activitiesRecommendationOptions: createFakeElement(),
+    activitiesBaselineHeadline: createFakeElement(),
+    activitiesBaselineReference: createFakeElement(),
+    activitiesBaselineMetricList: createFakeElement(),
+  };
+
+  const selectedDates = [];
+
+  withFakeDocument(elements, () => {
+    renderActivitiesDaySurface({ date: "2026-03-09", detail: {}, decision: {}, baselineBars: [] }, {
+      availableDays: [
+        { date: "2026-03-08" },
+        { date: "2026-03-09" },
+        { date: "2026-03-10" },
+      ],
+      selectedDate: "2026-03-09",
+      todayDate: "2026-03-10",
+      onSelectDay(date) {
+        selectedDates.push(date);
+      },
+    });
+
+    elements.activitiesPrevDayBtn.onclick();
+    elements.activitiesNextDayBtn.onclick();
+  });
+
+  assert.deepEqual(selectedDates, ["2026-03-08", "2026-03-10"]);
+});
+
 test("activities surface renders safe empty states for sparse history", () => {
   const elements = {
     activitiesDaySelect: createFakeElement(),
+    activitiesPrevDayBtn: createFakeElement(),
+    activitiesNextDayBtn: createFakeElement(),
     activitiesSelectionMeta: createFakeElement(),
     activitiesActualHeadline: createFakeElement(),
     activitiesActualSummary: createFakeElement(),
@@ -187,6 +242,8 @@ test("activities surface renders safe empty states for sparse history", () => {
   });
 
   assert.equal(elements.activitiesDaySelect.disabled, true);
+  assert.equal(elements.activitiesPrevDayBtn.disabled, true);
+  assert.equal(elements.activitiesNextDayBtn.disabled, true);
   assert.equal(elements.activitiesSelectionMeta.textContent, "No synced history is available yet.");
   assert.match(elements.activitiesActualList.innerHTML, /No synced history is available yet\./);
   assert.match(elements.activitiesRecommendationSummary.innerHTML, /No recommendation data is available for the selected day\./);
