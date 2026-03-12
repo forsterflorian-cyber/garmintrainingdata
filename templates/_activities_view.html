@@ -1,0 +1,64 @@
+<section class="surface-intro">
+  <div>
+    <p class="eyebrow">Activities</p>
+    <h2>Historical Day Inspection</h2>
+    <p class="muted-copy">
+      Choose a day to inspect what happened, what was recommended, and how that day compared with baseline.
+    </p>
+  </div>
+</section>
+
+<div class="dashboard-grid">
+  <section class="panel span-12 activities-panel">
+    <div class="panel-head-space">
+      <div>
+        <p class="eyebrow">Activities</p>
+        <h2>Selected Day</h2>
+      </div>
+      <label class="toolbar-field activities-day-field">
+        <span>Day</span>
+        <select id="activitiesDaySelect" aria-label="Select activity day"></select>
+      </label>
+    </div>
+
+    <p id="activitiesSelectionMeta" class="muted-copy activities-selection-meta">Select a day to inspect.</p>
+
+    <div class="activities-stack">
+      <article class="chart-card activities-section">
+        <div class="chart-head">
+          <div>
+            <p class="eyebrow">What I Did</p>
+            <h3 id="activitiesActualHeadline">Activities On -</h3>
+          </div>
+          <p class="muted-copy">Recorded Garmin activities for the selected day.</p>
+        </div>
+        <div id="activitiesActualSummary" class="activity-day-summary"></div>
+        <div id="activitiesActualList" class="activity-list"></div>
+      </article>
+
+      <article class="chart-card activities-section">
+        <div class="chart-head">
+          <div>
+            <p class="eyebrow">What I Should Have Done</p>
+            <h3 id="activitiesRecommendationHeadline">Recommendation For -</h3>
+          </div>
+          <p class="muted-copy">The decision for the selected day stays conservative and follows the existing model.</p>
+        </div>
+        <div id="activitiesRecommendationSummary" class="activity-day-summary"></div>
+        <div id="activitiesRecommendationWhy" class="why-list"></div>
+        <div id="activitiesRecommendationOptions" class="unit-grid"></div>
+      </article>
+
+      <article class="chart-card activities-section">
+        <div class="chart-head">
+          <div>
+            <p class="eyebrow">Baseline Comparison</p>
+            <h3 id="activitiesBaselineHeadline">Selected Day Vs Baseline</h3>
+          </div>
+          <p id="activitiesBaselineReference" class="muted-copy">Reference window follows the selected range.</p>
+        </div>
+        <div id="activitiesBaselineMetricList" class="baseline-grid"></div>
+      </article>
+    </div>
+  </section>
+</div>

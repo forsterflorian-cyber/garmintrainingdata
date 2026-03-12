@@ -1,0 +1,50 @@
+<section class="surface-intro">
+  <div>
+    <p class="eyebrow">Trends</p>
+    <h2>Load And Readiness Trends</h2>
+    <p class="muted-copy">
+      Trend charts stay focused on the current trailing range. Historical day inspection lives in Activities.
+    </p>
+  </div>
+</section>
+
+<div class="dashboard-grid">
+  <section class="panel span-12">
+    <div class="panel-head-space">
+      <div>
+        <p class="eyebrow">Trends</p>
+        <h2>Range Overview</h2>
+      </div>
+      <p class="muted-copy">Charts stay anchored to the current dashboard day.</p>
+    </div>
+
+    <div class="chart-grid trends-chart-grid">
+      <article class="chart-card">
+        <div class="chart-head">
+          <div>
+            <p class="eyebrow">Readiness Trend</p>
+            <h3>Form Across Range</h3>
+          </div>
+          <p class="muted-copy">Readiness points show how the trailing range evolved into today.</p>
+        </div>
+        <svg id="readinessChart" class="chart-surface" viewBox="0 0 920 320" preserveAspectRatio="none"></svg>
+      </article>
+
+      <article class="chart-card">
+        <div class="chart-head">
+          <div>
+            <p class="eyebrow">Load Channel</p>
+            <h3>Daily Vs 7d / 28d Load</h3>
+          </div>
+          <article id="loadMomentumCard" class="trend-callout" data-tone="neutral">
+            <span class="trend-callout-label">Load Momentum</span>
+            <strong id="loadMomentumValue">No data</strong>
+            <small id="loadMomentumLabel">Need a complete previous 7d window.</small>
+          </article>
+        </div>
+        <p class="muted-copy">Bars show daily load while 7d and 28d lines reveal build, taper, and spike patterns.</p>
+        <svg id="loadChart" class="chart-surface" viewBox="0 0 920 320" preserveAspectRatio="none"></svg>
+      </article>
+    </div>
+  </section>
+</div>

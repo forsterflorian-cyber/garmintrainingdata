@@ -9,7 +9,7 @@ import { chromium } from "playwright-core";
 
 const REPO_ROOT = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 
-test("inline history heat selector updates the selected day and activities", async (t) => {
+test("activities dropdown switches day content without reordering options", async (t) => {
   const browserExecutablePath = await resolveBrowserExecutablePath();
   if (!browserExecutablePath) {
     t.skip("Chrome or Edge not available for browser integration test.");
@@ -19,7 +19,7 @@ test("inline history heat selector updates the selected day and activities", asy
   const server = http.createServer(async (request, response) => {
     try {
       const requestPath = new URL(request.url, "http://127.0.0.1").pathname;
-      const relativePath = requestPath === "/" ? "/tests/fixtures/analysis-history-flow.html" : requestPath;
+      const relativePath = requestPath === "/" ? "/tests/fixtures/activities-day-flow.html" : requestPath;
       const safePath = path.normalize(relativePath).replace(/^([/\\])+/, "");
       const filePath = path.join(REPO_ROOT, safePath);
       if (!filePath.startsWith(REPO_ROOT)) {
@@ -50,34 +50,33 @@ test("inline history heat selector updates the selected day and activities", asy
 
   try {
     const page = await browser.newPage();
-    await page.goto(`${baseUrl}/tests/fixtures/analysis-history-flow.html`);
+    await page.goto(`${baseUrl}/tests/fixtures/activities-day-flow.html`);
 
-    await page.waitForSelector("#historyTable .history-row");
-    await assertHistoryState(page, "2026-03-12", "2026-03-12");
+    const select = page.locator("#activitiesDaySelect");
+    await select.waitFor();
+    const orderBefore = await select.locator("option").evaluateAll((options) => options.map((option) => option.value));
 
-    await page.locator('.history-heat-cell[data-day="2026-03-11"]').click();
+    assert.deepEqual(orderBefore, ["2026-03-08", "2026-03-09", "2026-03-10", "2026-03-11"]);
+    await assertDayState(page, "2026-03-10", /Track Intervals/, /Threshold OK/);
 
-    await assertHistoryState(page, "2026-03-11", "2026-03-11");
-    assert.notEqual(await page.locator("#activityHeadline").textContent(), "Activities On 2026-03-12");
-    await assert.equal(await page.locator("#activitySelectionMeta").textContent(), "Selected in History: 2026-03-11");
+    await select.selectOption("2026-03-09");
+    const orderAfter = await select.locator("option").evaluateAll((options) => options.map((option) => option.value));
+
+    assert.deepEqual(orderAfter, orderBefore);
+    await assertDayState(page, "2026-03-09", /Lunch Ride/, /Moderate only/);
+    assert.match(await page.locator("#activitiesSelectionMeta").textContent(), /Dropdown order stays chronological/);
   } finally {
     await browser.close();
     await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
   }
 });
 
-async function assertHistoryState(page, activeDay, activityDay) {
-  const activeRowCount = await page.locator(`#historyTable .history-row.is-active[data-day="${activeDay}"]`).count();
-  assert.equal(activeRowCount, 1);
-  assert.equal(await page.locator(`#historyTable .history-heat-cell.is-active[data-day="${activeDay}"]`).count(), 1);
-  assert.equal(await page.locator("#activityHeadline").textContent(), `Activities On ${activityDay}`);
-
-  if (activityDay === "2026-03-11") {
-    assert.equal(await page.locator("#activityList .activity-card").count(), 1);
-    await page.locator("#activityList").waitFor();
-    assert.match(await page.locator("#activityList").textContent(), /Steady Ride/);
-    assert.equal(await page.locator('#historyTable .history-row.is-active[data-day="2026-03-12"]').count(), 0);
-  }
+async function assertDayState(page, day, activityPattern, recommendationPattern) {
+  assert.equal(await page.locator("#activitiesDaySelect").inputValue(), day);
+  assert.equal(await page.locator("#activitiesActualHeadline").textContent(), `Activities On ${day}`);
+  assert.equal(await page.locator("#activitiesRecommendationHeadline").textContent(), `Recommendation For ${day}`);
+  assert.match(await page.locator("#activitiesActualList").textContent(), activityPattern);
+  assert.match(await page.locator("#activitiesRecommendationSummary").textContent(), recommendationPattern);
 }
 
 async function resolveBrowserExecutablePath() {

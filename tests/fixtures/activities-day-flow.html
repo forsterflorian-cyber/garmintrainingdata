@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Activities Day Flow Fixture</title>
+</head>
+<body>
+  <section class="panel">
+    <label>
+      Day
+      <select id="activitiesDaySelect" aria-label="Select activity day"></select>
+    </label>
+    <p id="activitiesSelectionMeta"></p>
+  </section>
+
+  <section class="panel">
+    <h3 id="activitiesActualHeadline">Activities On -</h3>
+    <div id="activitiesActualSummary"></div>
+    <div id="activitiesActualList"></div>
+  </section>
+
+  <section class="panel">
+    <h3 id="activitiesRecommendationHeadline">Recommendation For -</h3>
+    <div id="activitiesRecommendationSummary"></div>
+    <div id="activitiesRecommendationWhy"></div>
+    <div id="activitiesRecommendationOptions"></div>
+  </section>
+
+  <section class="panel">
+    <h3 id="activitiesBaselineHeadline">Selected Day Vs Baseline</h3>
+    <p id="activitiesBaselineReference"></p>
+    <div id="activitiesBaselineMetricList"></div>
+  </section>
+
+  <script type="module">
+    import { renderActivitiesDaySurface } from "/static/dashboard/components/activities/ActivitiesDaySurface.js";
+
+    const availableDays = [
+      { date: "2026-03-08" },
+      { date: "2026-03-09" },
+      { date: "2026-03-10" },
+      { date: "2026-03-11" },
+    ];
+
+    const payloads = {
+      "2026-03-08": {
+        date: "2026-03-08",
+        detail: {
+          activeDate: "2026-03-08",
+          sessionType: "easy",
+          activities: [],
+        },
+        decision: {
+          primaryRecommendation: "Easy Aerobic",
+          loadTolerance: "Manageable",
+          summaryText: "Keep the day easy.",
+          why: ["Recovery is recovering."],
+          bestOptions: [{ label: "Easy spin", details: "30-45 min recovery ride." }],
+        },
+        reference: {
+          baselineDays: 28,
+          baselineSource: "rolling",
+          baselineSampleDays: 10,
+        },
+        baselineBars: [{ label: "HRV", deltaPct: 1.4, progress: 54, value: 54, baseline: 53, tone: "positive" }],
+      },
+      "2026-03-09": {
+        date: "2026-03-09",
+        detail: {
+          activeDate: "2026-03-09",
+          sessionType: "moderate",
+          activities: [
+            {
+              name: "Lunch Ride",
+              type_key: "cycling",
+              start_local: "2026-03-09 12:00",
+              duration_min: 52,
+              training_load: 71,
+              sport_tag: "bike",
+              sessionType: "moderate",
+            },
+          ],
+        },
+        decision: {
+          primaryRecommendation: "Moderate only",
+          loadTolerance: "Manageable",
+          summaryText: "Keep the day controlled.",
+          why: ["Recovery is stable.", "Load is near target."],
+          bestOptions: [{ label: "Steady ride", details: "45-60 min controlled ride." }],
+        },
+        reference: {
+          baselineDays: 28,
+          baselineSource: "rolling",
+          baselineSampleDays: 12,
+        },
+        baselineBars: [{ label: "HRV", deltaPct: 4.2, progress: 62, value: 58, baseline: 55, tone: "positive" }],
+      },
+      "2026-03-10": {
+        date: "2026-03-10",
+        detail: {
+          activeDate: "2026-03-10",
+          sessionType: "threshold",
+          activities: [
+            {
+              name: "Track Intervals",
+              type_key: "running",
+              start_local: "2026-03-10 07:05",
+              duration_min: 61,
+              avg_hr: 151,
+              max_hr: 176,
+              aerobic_te: 3.7,
+              anaerobic_te: 1.0,
+              training_load: 82,
+              sport_tag: "run",
+              sessionType: "threshold",
+            },
+          ],
+        },
+        decision: {
+          primaryRecommendation: "Threshold OK",
+          loadTolerance: "High",
+          summaryText: "You had room for quality work.",
+          why: ["Recovery is strong.", "Load is inside target."],
+          bestOptions: [{ label: "Threshold intervals", details: "Structured threshold work." }],
+        },
+        reference: {
+          baselineDays: 28,
+          baselineSource: "rolling",
+          baselineSampleDays: 13,
+        },
+        baselineBars: [{ label: "HRV", deltaPct: 7.1, progress: 70, value: 60, baseline: 56, tone: "positive" }],
+      },
+      "2026-03-11": {
+        date: "2026-03-11",
+        detail: {
+          activeDate: "2026-03-11",
+          sessionType: "recovery",
+          activities: [],
+        },
+        decision: {
+          primaryRecommendation: "Recovery day",
+          loadTolerance: "Low",
+          summaryText: "Keep the day restorative.",
+          why: ["Recovery is suppressed."],
+          bestOptions: [{ label: "Walk", details: "Short recovery walk." }],
+        },
+        reference: {
+          baselineDays: 28,
+          baselineSource: "stored",
+          baselineSampleDays: 0,
+        },
+        baselineBars: [],
+      },
+    };
+
+    let selectedDate = "2026-03-10";
+
+    function render() {
+      renderActivitiesDaySurface(payloads[selectedDate], {
+        availableDays,
+        selectedDate,
+        onSelectDay(nextDate) {
+          selectedDate = nextDate;
+          render();
+        },
+      });
+    }
+
+    render();
+  </script>
+</body>
+</html>

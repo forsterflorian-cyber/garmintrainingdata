@@ -6,7 +6,10 @@ export function renderReadinessTrendCard(series, activeDate) {
 
 function drawLineChart(svgId, series, lines, activeDate) {
   const svg = el(svgId);
-  if (!svg || !series.length) {
+  if (!svg) {
+    return;
+  }
+  if (!series.length) {
     svg.innerHTML = "";
     return;
   }

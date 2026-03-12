@@ -4,10 +4,9 @@ import { renderNextDaysOutlookPanel } from "./components/decision/NextDaysOutloo
 import { renderTomorrowImpactPanel } from "./components/decision/TomorrowImpactPanel.js";
 import { renderTrainingDecisionCard } from "./components/decision/TrainingDecisionCard.js";
 import { renderWhyRecommendationPanel } from "./components/decision/WhyRecommendationPanel.js";
-import { renderAnalysisHistorySurface } from "./components/analysis/AnalysisHistorySurface.js";
+import { renderActivitiesDaySurface } from "./components/activities/ActivitiesDaySurface.js";
 import { setAuthStatus, setGarminStatus } from "./components/layout/DashboardHeader.js";
 import { hydrateRangeSelect } from "./components/layout/FocusFilters.js";
-import { renderBaselineComparisonCard } from "./components/metrics/BaselineComparisonCard.js";
 import { renderLoadTrendCard } from "./components/trends/LoadTrendCard.js";
 import { renderReadinessTrendCard } from "./components/trends/ReadinessTrendCard.js";
 import { renderSyncActionButtons } from "./components/sync/SyncActionButtons.js";
@@ -20,7 +19,7 @@ import { computeNextDaysOutlook } from "./lib/outlookForecast.js";
 import { buildForecastContextCopy, compareCompletedSessionToDecision } from "./lib/planDecisionUtils.js";
 
 const APP_CONFIG = window.__APP_CONFIG__ || {};
-const SURFACE_VIEWS = ["plan", "analysis", "sync", "debug"];
+const SURFACE_VIEWS = ["plan", "analysis", "trends", "activities", "sync", "debug"];
 const APP_VIEWS = ["loading", "auth", "garminSetup", "dashboard", "settings", "error"];
 const APP_ROUTE_PATHS = Object.freeze({
   auth: "/auth",
@@ -116,16 +115,15 @@ const state = {
   appStateError: null,
   appView: "loading",
   planDashboard: null,
-  analysisDashboard: null,
-  planDate: null,
-  analysisDate: null,
+  activitiesDashboard: null,
+  todayDate: null,
+  activitiesDate: null,
   actualSessionForPlanDate: null,
   selectedPreviewSession: null,
   forecastInputMode: "preview",
   rangeDays: APP_CONFIG.defaultRangeDays || 28,
   mode: "hybrid",
   activeView: "plan",
-  activeTab: "trends",
   advancedMode: loadAdvancedModePreference(),
   syncStatus: null,
   currentForecast: null,
@@ -350,6 +348,11 @@ function syncSurfaceUi({ syncHash = true } = {}) {
   const debugButton = el("debugNavBtn");
   if (debugButton) {
     debugButton.hidden = !showSurfaceControls || !debugSurfaceAllowed();
+  }
+
+  const surfaceFilters = el("surfaceHeaderFilters");
+  if (surfaceFilters) {
+    surfaceFilters.hidden = !showSurfaceControls || ["sync", "debug"].includes(activeView);
   }
 
   document.querySelectorAll("[data-view]").forEach((button) => {
@@ -795,7 +798,7 @@ function currentBestOptions() {
 }
 
 function getStoredPlannedSession() {
-  return getPlannedSession(currentUserId(), state.planDate || state.planDashboard?.date);
+  return getPlannedSession(currentUserId(), state.todayDate || state.planDashboard?.date);
 }
 
 function validPlannedSessionType() {
@@ -807,8 +810,8 @@ function validPlannedSessionType() {
 }
 
 function setStoredPlannedSessionType(sessionType) {
-  const planDate = state.planDate || state.planDashboard?.date;
-  setPlannedSession(currentUserId(), planDate, sessionType);
+  const todayDate = state.todayDate || state.planDashboard?.date;
+  setPlannedSession(currentUserId(), todayDate, sessionType);
   state.selectedPreviewSession = sessionType || null;
 }
 
@@ -852,12 +855,36 @@ function renderSyncUi(sync = state.syncStatus) {
   }
 }
 
-function setAnalysisDay(date) {
-  if (!date || date === state.analysisDate) {
+function setActivitiesDay(date) {
+  if (!date || date === state.activitiesDate) {
     return;
   }
-  state.analysisDate = date;
+  state.activitiesDate = date;
   void loadDashboard({ skipAutoSync: true });
+}
+
+function historyRowsFromPayload(payload) {
+  return Array.isArray(payload?.history?.rows) ? payload.history.rows : [];
+}
+
+function historyDates(rows) {
+  return rows
+    .map((row) => (typeof row?.date === "string" && row.date ? row.date : null))
+    .filter(Boolean);
+}
+
+function resolveActivitiesDate(requestedDate, todayPayload) {
+  const dates = historyDates(historyRowsFromPayload(todayPayload));
+  if (!dates.length) {
+    return typeof todayPayload?.date === "string" && todayPayload.date ? todayPayload.date : null;
+  }
+  if (requestedDate && dates.includes(requestedDate)) {
+    return requestedDate;
+  }
+  if (todayPayload?.date && dates.includes(todayPayload.date)) {
+    return todayPayload.date;
+  }
+  return dates[dates.length - 1];
 }
 
 function safeNumeric(value) {
@@ -1010,13 +1037,17 @@ function renderPlanSessionSection({ actualSession, options, selectedType, sessio
   const comparison = el("planSessionComparison");
   const actualMode = Boolean(actualSession);
 
-  el("planSessionLabel").textContent = actualMode ? "Today" : "Choose today's session";
-  el("planSessionTitle").textContent = actualMode ? "Completed session" : "Recommended sessions";
+  el("planSessionLabel").textContent = "What you should do today";
+  el("planSessionTitle").textContent = "Recommended sessions";
   el("planSessionMeta").textContent = actualMode
-    ? "Forecast follows the completed session."
+    ? "Recommendations stay visible alongside what you completed today."
     : "Selection updates tomorrow and the next days outlook.";
 
   if (actualMode) {
+    const actualLabel = el("planActualSessionLabel");
+    if (actualLabel) {
+      actualLabel.textContent = "What you did today";
+    }
     el("planActualSessionTitle").textContent = safeText(actualSession.title, "Completed session");
     el("planActualSessionSummary").textContent = safeText(actualSession.summary, "Tomorrow uses the completed session.");
     el("planActualSessionStats").innerHTML = actualSession.chips.length
@@ -1026,16 +1057,14 @@ function renderPlanSessionSection({ actualSession, options, selectedType, sessio
     comparison.textContent = safeText(sessionComparison?.label);
     comparison.dataset.tone = sessionComparison?.tone || "neutral";
     comparison.hidden = !sessionComparison?.label;
-    sessionGrid.hidden = true;
-    sessionGrid.innerHTML = "";
-    return;
+  } else {
+    actualCard.hidden = true;
+    el("planActualSessionStats").innerHTML = "";
+    comparison.hidden = true;
+    comparison.textContent = "";
+    comparison.dataset.tone = "neutral";
   }
 
-  actualCard.hidden = true;
-  el("planActualSessionStats").innerHTML = "";
-  comparison.hidden = true;
-  comparison.textContent = "";
-  comparison.dataset.tone = "neutral";
   sessionGrid.hidden = false;
   renderBestOptionsPanel(options, { selectedType });
 }
@@ -1187,24 +1216,6 @@ function renderDebug(payload, forecast) {
   }
 }
 
-function renderModeUnits(payload) {
-  const units = (payload?.detail?.legacyUnits || {})[state.mode] || (payload?.detail?.legacyUnits || {}).hybrid || [];
-  el("unitIntro").textContent = state.mode === "hybrid"
-    ? "Hybrid mode keeps run, bike, and strength balanced."
-    : `${labelFromKey(state.mode)} focus shifts which options count as the best fit.`;
-  if (!units.length) {
-    el("unitCards").innerHTML = '<div class="muted-copy">No Model Outputs Available.</div>';
-    return;
-  }
-
-  el("unitCards").innerHTML = units.map((unit, index) => `
-    <article class="unit-card">
-      <p class="eyebrow">Option ${index + 1}</p>
-      <div>${safeHtml(unit)}</div>
-    </article>
-  `).join("");
-}
-
 function renderPrompt(payload) {
   const promptField = el("aiPrompt");
   if (promptField) {
@@ -1231,26 +1242,36 @@ function renderPlanSurface(payload) {
 
 function renderAnalysisSurface(payload) {
   renderWhyRecommendationPanel(payload?.decision?.why || []);
-  renderBaselineComparisonCard(payload?.baselineBars || []);
+  renderPrompt(payload || {});
+  renderSummary(payload || {});
+}
+
+function renderTrendsSurface(payload) {
   renderReadinessTrendCard(payload?.trends?.readinessSeries || [], payload?.date || null);
   renderLoadTrendCard(
     payload?.trends?.loadChannelSeries || payload?.trends?.loadSeries || [],
     payload?.date || null,
     payload?.load?.momentum || null,
   );
-  renderAnalysisHistorySurface(payload || {}, { onSelectDay: setAnalysisDay });
-  renderModeUnits(payload || {});
-  renderPrompt(payload || {});
-  renderSummary(payload || {});
+}
+
+function renderActivitiesSurface(payload, availableDays) {
+  renderActivitiesDaySurface(payload || {}, {
+    availableDays,
+    selectedDate: state.activitiesDate,
+    onSelectDay: setActivitiesDay,
+    mode: state.mode,
+  });
 }
 
 function renderDashboard() {
   const planPayload = state.planDashboard;
-  const analysisPayload = state.analysisDashboard || state.planDashboard;
   renderSyncUi(planPayload?.sync || state.syncStatus);
   renderPlanSurface(planPayload);
-  renderAnalysisSurface(analysisPayload);
-  renderDebug(planPayload || analysisPayload || {}, state.currentForecast);
+  renderAnalysisSurface(planPayload || {});
+  renderTrendsSurface(planPayload || {});
+  renderActivitiesSurface(state.activitiesDashboard || planPayload || {}, historyRowsFromPayload(planPayload));
+  renderDebug(planPayload || state.activitiesDashboard || {}, state.currentForecast);
 }
 
 async function refreshSyncStatus({ reloadDashboardOnTerminal = false } = {}) {
@@ -1374,21 +1395,19 @@ async function loadDashboard({ skipAutoSync = false } = {}) {
   }
 
   try {
-    const planPayload = await apiGet(dashboardUrlForDate(state.planDate));
-    const resolvedPlanDate = planPayload?.date || state.planDate;
-    const requestedAnalysisDate = state.analysisDate;
-    let analysisPayload = planPayload;
-    let resolvedAnalysisDate = resolvedPlanDate;
+    const planPayload = await apiGet(dashboardUrlForDate(state.todayDate));
+    const resolvedTodayDate = planPayload?.date || state.todayDate;
+    const resolvedActivitiesDate = resolveActivitiesDate(state.activitiesDate, planPayload);
+    let activitiesPayload = planPayload;
 
-    if (requestedAnalysisDate && requestedAnalysisDate !== resolvedPlanDate) {
-      analysisPayload = await apiGet(dashboardUrlForDate(requestedAnalysisDate));
-      resolvedAnalysisDate = analysisPayload?.date || requestedAnalysisDate;
+    if (resolvedActivitiesDate && resolvedActivitiesDate !== resolvedTodayDate) {
+      activitiesPayload = await apiGet(dashboardUrlForDate(resolvedActivitiesDate));
     }
 
     state.planDashboard = planPayload;
-    state.analysisDashboard = analysisPayload;
-    state.planDate = resolvedPlanDate || null;
-    state.analysisDate = resolvedAnalysisDate || resolvedPlanDate || null;
+    state.activitiesDashboard = activitiesPayload;
+    state.todayDate = resolvedTodayDate || null;
+    state.activitiesDate = resolvedActivitiesDate || resolvedTodayDate || null;
     state.syncStatus = planPayload?.sync || null;
     renderDashboard();
     renderSyncStatusPanel(state.syncStatus || {}, "settingsSyncStatusPanel");
@@ -1423,9 +1442,9 @@ function setLoggedOutState({ authMessage = "Not signed in", garminMessage = "Sig
   state.appStateError = null;
   state.appView = "auth";
   state.planDashboard = null;
-  state.analysisDashboard = null;
-  state.planDate = null;
-  state.analysisDate = null;
+  state.activitiesDashboard = null;
+  state.todayDate = null;
+  state.activitiesDate = null;
   state.actualSessionForPlanDate = null;
   state.selectedPreviewSession = null;
   state.forecastInputMode = "preview";
@@ -1599,7 +1618,7 @@ function bindPlannedSessionButtons() {
       const sessionType = button.dataset.sessionType;
       setStoredPlannedSessionType(sessionType);
       renderPlanSurface(state.planDashboard || {});
-      renderDebug(state.planDashboard || state.analysisDashboard || {}, state.currentForecast);
+      renderDebug(state.planDashboard || state.activitiesDashboard || {}, state.currentForecast);
     });
   });
 }
@@ -1645,25 +1664,6 @@ function bindSyncActionButtons() {
       } else if (action === "retry") {
         void startSyncRequest("/api/sync/update", null, "syncing");
       }
-    });
-  });
-}
-
-function bindTabs() {
-  const tabBar = el("tabBar");
-  if (!tabBar) {
-    return;
-  }
-
-  tabBar.querySelectorAll(".tab-btn").forEach((button) => {
-    button.addEventListener("click", () => {
-      state.activeTab = button.dataset.tab;
-      tabBar.querySelectorAll(".tab-btn").forEach((node) => {
-        node.classList.toggle("is-active", node === button);
-      });
-      document.querySelectorAll(".tab-panel").forEach((panel) => {
-        panel.classList.toggle("is-active", panel.dataset.panel === state.activeTab);
-      });
     });
   });
 }
@@ -1721,7 +1721,6 @@ function bindEvents() {
   bindAdvancedToggle();
   bindAppNavigation();
   hydrateRangeSelect(APP_CONFIG.rangeFilters || [7, 14, 28, 84, 365], state.rangeDays);
-  bindTabs();
 
   document.querySelectorAll("[data-auth-action]").forEach((button) => {
     button.addEventListener("click", () => {

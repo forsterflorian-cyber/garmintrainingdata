@@ -167,6 +167,33 @@ class DashboardServiceHardeningTests(unittest.TestCase):
         self.assertIn("2026-03-11", prompt)
         self.assertIn("Short Run", prompt)
 
+    def test_selected_historical_day_payload_supports_activity_inspection(self):
+        rows = [
+            build_training_row("2026-03-10", load_day=18.0, load_7d=126.0, load_28d=504.0),
+            build_training_row("2026-03-11", load_day=42.0, load_7d=168.0, load_28d=560.0),
+            build_training_row("2026-03-12", load_day=24.0, load_7d=154.0, load_28d=546.0),
+        ]
+        rows[1]["data"]["activities"] = [
+            {
+                "activity_id": 10,
+                "start_local": "2026-03-11 18:00",
+                "date_local": "2026-03-11",
+                "type_key": "cycling",
+                "name": "Evening Ride",
+                "duration_min": 58,
+                "training_load": 54,
+            },
+        ]
+
+        payload = build_dashboard_payload(rows, selected_date="2026-03-11", period_days=7)
+
+        self.assertEqual(payload["date"], "2026-03-11")
+        self.assertEqual(payload["detail"]["activeDate"], "2026-03-11")
+        self.assertEqual(payload["today"]["recommendationDay"], "2026-03-11")
+        self.assertEqual(payload["detail"]["activities"][0]["name"], "Evening Ride")
+        self.assertIsInstance(payload["baselineBars"], list)
+        self.assertGreaterEqual(len(payload["history"]["rows"]), 2)
+
     def test_range_changes_the_trailing_baseline_reference_window(self):
         def row(day: str, hrv: int, stored_baseline: int) -> dict:
             return {

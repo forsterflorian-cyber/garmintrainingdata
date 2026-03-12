@@ -3,23 +3,8 @@
     <p class="eyebrow">Analysis</p>
     <h2>Why This Recommendation</h2>
     <p class="muted-copy">
-      Trends, baseline shifts, history, and raw activities stay here so Plan stays focused. Changing the focus day here never changes Plan.
+      Analysis stays fixed to today. Historical day inspection now lives in Activities, while trend charts live in Trends.
     </p>
-  </div>
-  <div class="toolbar analysis-toolbar">
-    <label class="toolbar-field">
-      <span>Range</span>
-      <select id="rangeSelect"></select>
-    </label>
-    <label class="toolbar-field">
-      <span>Mode</span>
-      <select id="modeSelect">
-        <option value="hybrid">Hybrid</option>
-        <option value="run">Run Focus</option>
-        <option value="bike">Bike Focus</option>
-        <option value="strength">Strength Focus</option>
-      </select>
-    </label>
   </div>
 </section>
 
@@ -27,9 +12,20 @@
   <section class="panel span-7">
     <div class="panel-head-space">
       <div>
-        <p class="eyebrow">Baseline Comparison</p>
-        <h2>Focus Day Vs Baseline</h2>
-        <p id="baselineReferenceCopy" class="muted-copy">Reference window follows the selected range.</p>
+        <p class="eyebrow">Today</p>
+        <h2>Why This Recommendation</h2>
+        <p class="muted-copy">This explanation is always anchored to today&rsquo;s dashboard decision.</p>
+      </div>
+    </div>
+    <div id="decisionWhyList" class="why-list"></div>
+  </section>
+
+  <section class="panel span-5">
+    <div class="panel-head-space">
+      <div>
+        <p class="eyebrow">Today</p>
+        <h2>Decision Context</h2>
+        <p class="muted-copy">Snapshot values stay fixed to the current dashboard day.</p>
       </div>
       <div class="mini-summary">
         <div>
@@ -40,26 +36,6 @@
           <span>Avg Load</span>
           <strong id="summaryAverageLoad">-</strong>
         </div>
-      </div>
-    </div>
-    <div id="baselineMetricList" class="baseline-grid"></div>
-  </section>
-
-  <section class="panel span-5">
-    <div class="panel-head-space">
-      <div>
-        <p class="eyebrow">Recommendation Context</p>
-        <h2>Why This Recommendation</h2>
-      </div>
-    </div>
-    <div id="decisionWhyList" class="why-list"></div>
-
-    <div class="analysis-divider"></div>
-
-    <div class="panel-head-space compact-head">
-      <div>
-        <p class="eyebrow">Snapshot</p>
-        <h3>Decision Context</h3>
       </div>
     </div>
     <div class="snapshot-grid">
@@ -89,105 +65,5 @@
       </article>
     </div>
     <p id="snapshotSyncMeta" class="muted-copy">No Sync Data Yet.</p>
-  </section>
-
-  <section class="panel span-12">
-    <div class="panel-head-space">
-      <div>
-        <p class="eyebrow">Analysis</p>
-        <h2>Trends, Load, History, And Activities</h2>
-      </div>
-      <div class="tab-bar" id="tabBar">
-        <button class="tab-btn is-active" type="button" data-tab="trends">Trends</button>
-        <button class="tab-btn" type="button" data-tab="history">History</button>
-        <button class="tab-btn" type="button" data-tab="activities">Activities</button>
-      </div>
-    </div>
-
-    <div class="tab-panel is-active" data-panel="trends">
-      <div class="chart-grid">
-        <article class="chart-card">
-          <div class="chart-head">
-            <div>
-              <p class="eyebrow">Readiness Trend</p>
-              <h3>Form Across Range</h3>
-            </div>
-            <p class="muted-copy">The selected day updates the analysis surface only.</p>
-          </div>
-          <svg id="readinessChart" class="chart-surface" viewBox="0 0 920 320" preserveAspectRatio="none"></svg>
-        </article>
-
-        <article class="chart-card">
-          <div class="chart-head">
-            <div>
-              <p class="eyebrow">Load Channel</p>
-              <h3>Daily Vs 7d / 28d Load</h3>
-            </div>
-            <article id="loadMomentumCard" class="trend-callout" data-tone="neutral">
-              <span class="trend-callout-label">Load Momentum</span>
-              <strong id="loadMomentumValue">No data</strong>
-              <small id="loadMomentumLabel">Need a complete previous 7d window.</small>
-            </article>
-          </div>
-          <p class="muted-copy">Bars show daily load while 7d and 28d lines reveal build, taper, and spike patterns.</p>
-          <svg id="loadChart" class="chart-surface" viewBox="0 0 920 320" preserveAspectRatio="none"></svg>
-        </article>
-      </div>
-    </div>
-
-    <div class="tab-panel" data-panel="history">
-      <article class="chart-card history-card">
-        <div class="chart-head">
-          <div>
-            <p class="eyebrow">History</p>
-            <h3>Day-By-Day Analysis</h3>
-          </div>
-          <p class="muted-copy">Use the inline heat cell in each row to change the selected analysis day. Activities follows the same selection.</p>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Heat</th>
-                <th>Date</th>
-                <th>Readiness</th>
-                <th>Load</th>
-                <th>Ratio</th>
-                <th>Recommendation</th>
-              </tr>
-            </thead>
-            <tbody id="historyTable"></tbody>
-          </table>
-        </div>
-      </article>
-    </div>
-
-    <div class="tab-panel" data-panel="activities">
-      <div class="detail-grid">
-        <article class="chart-card">
-          <div class="chart-head">
-            <div>
-              <p class="eyebrow">Activities</p>
-              <h3 id="activityHeadline">Focus Day Activities</h3>
-            </div>
-            <p class="muted-copy">Raw Garmin activities stay available, with a recommendation check for the selected day.</p>
-          </div>
-          <p id="activitySelectionMeta" class="muted-copy activity-selection-meta">History selection drives this view.</p>
-          <div id="activityDaySummary" class="activity-day-summary"></div>
-          <div id="activityList" class="activity-list"></div>
-        </article>
-
-        <article class="chart-card">
-          <div class="chart-head">
-            <div>
-              <p class="eyebrow">Mode Options</p>
-              <h3>Original Model Outputs</h3>
-            </div>
-            <p id="unitIntro" class="muted-copy">Options follow the active mode.</p>
-          </div>
-          <div id="unitCards" class="unit-grid"></div>
-        </article>
-      </div>
-    </div>
   </section>
 </div>

@@ -46,9 +46,26 @@
         <nav id="surfaceNav" class="surface-nav surface-nav-secondary" aria-label="Dashboard views">
           <button class="surface-nav-btn is-active" type="button" data-view="plan">Plan</button>
           <button class="surface-nav-btn" type="button" data-view="analysis">Analysis</button>
+          <button class="surface-nav-btn" type="button" data-view="trends">Trends</button>
+          <button class="surface-nav-btn" type="button" data-view="activities">Activities</button>
           <button class="surface-nav-btn" type="button" data-view="sync">Sync</button>
           <button id="debugNavBtn" class="surface-nav-btn" type="button" data-view="debug" hidden>Debug</button>
         </nav>
+        <div id="surfaceHeaderFilters" class="toolbar surface-toolbar">
+          <label class="toolbar-field">
+            <span>Range</span>
+            <select id="rangeSelect"></select>
+          </label>
+          <label class="toolbar-field">
+            <span>Mode</span>
+            <select id="modeSelect">
+              <option value="hybrid">Hybrid</option>
+              <option value="run">Run Focus</option>
+              <option value="bike">Bike Focus</option>
+              <option value="strength">Strength Focus</option>
+            </select>
+          </label>
+        </div>
       </div>
     </header>
 
@@ -77,6 +94,14 @@
 
           <section class="surface-panel" data-view-panel="analysis" hidden>
             {% include "_analysis_view.html" %}
+          </section>
+
+          <section class="surface-panel" data-view-panel="trends" hidden>
+            {% include "_trends_view.html" %}
+          </section>
+
+          <section class="surface-panel" data-view-panel="activities" hidden>
+            {% include "_activities_view.html" %}
           </section>
 
           <section class="surface-panel" data-view-panel="sync" hidden>
