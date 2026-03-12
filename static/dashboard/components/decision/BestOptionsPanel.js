@@ -16,16 +16,16 @@ export function renderBestOptionsPanel(options, { selectedType = null } = {}) {
       data-selected="${option.type === selectedType ? "true" : "false"}"
       aria-pressed="${option.type === selectedType ? "true" : "false"}"
     >
-      <div class="session-card-head">
+      <div class="session-card-body">
         <div class="session-card-title">
-          <p class="eyebrow">Option ${index + 1}</p>
+          <p class="session-option-index">Option ${index + 1}</p>
           <h4>${safeHtml(option.label)}</h4>
         </div>
-        <span class="session-selection-state">${option.type === selectedType ? "Selected" : "Preview"}</span>
+        <p class="session-details">${safeHtml(option.details)}</p>
       </div>
-      <p class="session-details">${safeHtml(option.details)}</p>
       <div class="session-card-foot">
         <span class="session-summary-tag">${safeHtml(compactDescriptor(option))}</span>
+        <span class="session-selection-state">${option.type === selectedType ? "Selected" : "Preview"}</span>
       </div>
     </button>
   `).join("");

@@ -11,7 +11,7 @@ import { setDashboardLoadingState, syncTrainingFocusHelp } from "./components/la
 import { renderBaselineComparisonCard } from "./components/metrics/BaselineComparisonCard.js";
 import { renderLoadTrendCard } from "./components/trends/LoadTrendCard.js";
 import { renderReadinessTrendCard } from "./components/trends/ReadinessTrendCard.js";
-import { renderSyncActionButtons } from "./components/sync/SyncActionButtons.js";
+import { renderPrimarySyncAction, renderSyncActionButtons } from "./components/sync/SyncActionButtons.js";
 import { renderSyncStatusBadge } from "./components/sync/SyncStatusBadge.js";
 import { getSyncUiCopy, syncReasonLabel } from "./components/sync/syncStatusCopy.js";
 import { renderSyncStatusPanel } from "./components/sync/SyncStatusPanel.js";
@@ -354,8 +354,14 @@ function syncSurfaceUi({ syncHash = true } = {}) {
   }
 
   const surfaceFilters = el("surfaceHeaderFilters");
+  const surfaceControlRow = el("surfaceControlRow");
+  const showControlRow = showSurfaceControls && !["sync", "debug"].includes(activeView);
   if (surfaceFilters) {
-    surfaceFilters.hidden = !showSurfaceControls || ["sync", "debug"].includes(activeView);
+    surfaceFilters.hidden = !showControlRow;
+  }
+
+  if (surfaceControlRow) {
+    surfaceControlRow.hidden = !showControlRow;
   }
 
   document.querySelectorAll("[data-view]").forEach((button) => {
@@ -454,6 +460,11 @@ function syncAppUi({ replaceHistory = false } = {}) {
   const surfaceHeaderRow = el("surfaceHeaderRow");
   if (surfaceHeaderRow) {
     surfaceHeaderRow.hidden = state.appView !== "dashboard";
+  }
+
+  const surfaceControlRow = el("surfaceControlRow");
+  if (surfaceControlRow) {
+    surfaceControlRow.hidden = state.appView !== "dashboard";
   }
 
   const settingsDashboardBtn = el("settingsDashboardBtn");
@@ -851,6 +862,7 @@ function renderSyncUi(sync = state.syncStatus) {
   renderSyncStatusBadge(sync || {});
   renderSyncStatusPanel(sync || {});
   renderSyncActionButtons(sync || {});
+  renderPrimarySyncAction(sync || {});
   renderSyncStatusPanel(sync || {}, "settingsSyncStatusPanel");
   bindSyncActionButtons();
 
