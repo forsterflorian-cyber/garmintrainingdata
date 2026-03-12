@@ -1,6 +1,6 @@
 import { el, safeHtml } from "../../lib/formatters.js";
 
-export function renderBestOptionsPanel(options, { selectedType = null } = {}) {
+export function renderBestOptionsPanel(options, { selectedType = null, completed = false } = {}) {
   const target = el("decisionSessionGrid");
 
   if (!options || !options.length) {
@@ -8,13 +8,16 @@ export function renderBestOptionsPanel(options, { selectedType = null } = {}) {
     return;
   }
 
-  target.innerHTML = options.map((option, index) => `
+  target.innerHTML = options.map((option, index) => {
+    const isSelected = !completed && option.type === selectedType;
+    return `
     <button
       class="decision-session-card plan-option-card"
       type="button"
       data-session-type="${safeHtml(option.type)}"
-      data-selected="${option.type === selectedType ? "true" : "false"}"
-      aria-pressed="${option.type === selectedType ? "true" : "false"}"
+      data-selected="${isSelected ? "true" : "false"}"
+      aria-pressed="${isSelected ? "true" : "false"}"
+      ${completed ? "disabled" : ""}
     >
       <div class="session-card-body">
         <div class="session-card-title">
@@ -25,10 +28,11 @@ export function renderBestOptionsPanel(options, { selectedType = null } = {}) {
       </div>
       <div class="session-card-foot">
         <span class="session-summary-tag">${safeHtml(compactDescriptor(option))}</span>
-        <span class="session-selection-state">${option.type === selectedType ? "Selected" : "Preview"}</span>
+        <span class="session-selection-state">Preview</span>
       </div>
     </button>
-  `).join("");
+  `;
+  }).join("");
 }
 
 function compactDescriptor(option) {

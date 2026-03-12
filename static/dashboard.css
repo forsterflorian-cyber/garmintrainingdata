@@ -1584,9 +1584,26 @@ th {
   background: rgba(8, 22, 29, 0.88);
 }
 
+.plan-option-card:disabled {
+  opacity: 0.52;
+  cursor: default;
+  pointer-events: none;
+}
+
 .plan-option-card:focus-visible {
   outline: 2px solid rgba(255, 184, 92, 0.82);
   outline-offset: 3px;
+}
+
+.session-guidance-copy {
+  margin: 2px 0 0;
+  font-size: 0.82rem;
+}
+
+.plan-completed-notice {
+  margin: 0 0 4px;
+  font-size: 0.84rem;
+  font-style: italic;
 }
 
 .plan-option-card[data-selected="true"] {

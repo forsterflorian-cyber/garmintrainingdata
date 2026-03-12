@@ -1066,6 +1066,14 @@ function renderPlanSessionSection({ actualSession, options, selectedType, sessio
     ? "Recommendations stay visible alongside what you completed today."
     : "Selection updates tomorrow and the next days outlook.";
 
+  const completedNotice = el("planCompletedNotice");
+  if (completedNotice) {
+    completedNotice.hidden = !actualMode;
+    completedNotice.textContent = actualMode
+      ? "Today\u2019s sessions are already recorded. These recommendations are now informational and influence tomorrow\u2019s plan."
+      : "";
+  }
+
   if (actualMode) {
     const actualLabel = el("planActualSessionLabel");
     if (actualLabel) {
@@ -1089,7 +1097,7 @@ function renderPlanSessionSection({ actualSession, options, selectedType, sessio
   }
 
   sessionGrid.hidden = false;
-  renderBestOptionsPanel(options, { selectedType });
+  renderBestOptionsPanel(options, { selectedType, completed: actualMode });
 }
 
 function renderDecisionPanels(payload) {
@@ -1974,6 +1982,11 @@ async function restoreSession() {
 if (supabaseClient) {
   supabaseClient.auth.onAuthStateChange((_event, session) => {
     applyCurrentSession(session || null);
+    // TOKEN_REFRESHED fires on tab focus when Supabase silently refreshes the JWT.
+    // Skip dashboard reload in that case — the Sync button handles manual refresh.
+    if (_event === "TOKEN_REFRESHED") {
+      return;
+    }
     window.setTimeout(async () => {
       if (state.sessionRestorePending) {
         return;
