@@ -46,6 +46,13 @@ DEFAULT_HISTORY_PATH = "training_history.json"
 LOGGER = get_logger(__name__)
 
 
+STRENGTH_ACTIVITY_LABELS = (
+    "strength training",
+    "weight training",
+    "weight lifting",
+)
+
+
 @dataclass
 class ActivitySummary:
     activity_id: Optional[int]
@@ -217,12 +224,56 @@ def extract_training_load(activity: Dict[str, Any]) -> Optional[float]:
     return first_number(*candidates)
 
 
+def is_strength_activity(activity: Dict[str, Any]) -> bool:
+    type_candidates = [
+        safe_get(activity, "activityType", "typeKey"),
+        safe_get(activity, "activityType", "parentTypeKey"),
+        safe_get(activity, "activityType", "categoryKey"),
+        activity.get("activityTypeKey"),
+    ]
+    for candidate in type_candidates:
+        if _matches_strength_activity_label(candidate):
+            return True
+    return _matches_strength_activity_label(activity.get("activityName"))
+
+
+def estimate_strength_load(duration_minutes: Optional[float]) -> Optional[float]:
+    if duration_minutes is None or duration_minutes <= 0:
+        return None
+    return round(min(float(duration_minutes) * 0.8, 60.0), 1)
+
+
+def _matches_strength_activity_label(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    normalized = value.strip().lower().replace("_", " ").replace("-", " ")
+    normalized = " ".join(normalized.split())
+    if not normalized:
+        return False
+    tokens = set(normalized.split())
+    if "strength" in tokens or "gym" in tokens:
+        return True
+    collapsed = normalized.replace(" ", "")
+    return (
+        any(label in normalized for label in STRENGTH_ACTIVITY_LABELS)
+        or "strengthtraining" in collapsed
+        or "weighttraining" in collapsed
+        or "weightlifting" in collapsed
+    )
+
+
 def summarize_activity(a: Dict[str, Any]) -> ActivitySummary:
     dt = to_datetime_local(a.get("startTimeLocal"))
     start_local = dt.strftime("%Y-%m-%d %H:%M") if dt else str(a.get("startTimeLocal") or "")
     date_local = dt.strftime("%Y-%m-%d") if dt else ""
 
+    duration_min = sec_to_min(a.get("duration"))
     training_load = extract_training_load(a)
+    if is_strength_activity(a):
+        estimated_strength_load = estimate_strength_load(duration_min)
+        # Garmin HR/EPOC load often undercounts heavy strength work, so apply a simple floor.
+        if estimated_strength_load is not None:
+            training_load = max(training_load, estimated_strength_load) if training_load is not None else estimated_strength_load
 
     return ActivitySummary(
         activity_id=a.get("activityId"),
@@ -230,7 +281,7 @@ def summarize_activity(a: Dict[str, Any]) -> ActivitySummary:
         date_local=date_local,
         type_key=safe_get(a, "activityType", "typeKey") or "unknown",
         name=a.get("activityName") or (safe_get(a, "activityType", "typeKey") or "unknown"),
-        duration_min=sec_to_min(a.get("duration")),
+        duration_min=duration_min,
         distance_km=meter_to_km(a.get("distance")),
         avg_hr=first_number(a.get("averageHR")),
         max_hr=first_number(a.get("maxHR")),
