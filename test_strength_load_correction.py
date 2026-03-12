@@ -63,15 +63,15 @@ class StrengthLoadCorrectionTests(unittest.TestCase):
             is_strength_activity(
                 {
                     "activityType": {"typeKey": "workout"},
-                    "activityName": "Gym Session",
+                    "activityName": "EGYM Training",
                 }
             )
         )
         self.assertFalse(
             is_strength_activity(
                 {
-                    "activityType": {"typeKey": "running"},
-                    "activityName": "Morning Run",
+                    "activityType": {"typeKey": "workout"},
+                    "activityName": "Indoor Bike",
                 }
             )
         )
@@ -103,6 +103,35 @@ class StrengthLoadCorrectionTests(unittest.TestCase):
         )
 
         self.assertEqual(activity.training_load, 36.0)
+
+    def test_egym_training_name_fallback_applies_strength_load_floor(self):
+        activity = summarize_activity(
+            build_raw_activity(
+                "2026-03-12",
+                activity_id=22,
+                type_key="workout",
+                name="EGYM Training",
+                duration_min=60,
+                training_load=15,
+            )
+        )
+
+        self.assertEqual(estimate_strength_load(60), 48.0)
+        self.assertEqual(activity.training_load, 48.0)
+
+    def test_indoor_bike_name_fallback_does_not_apply_strength_load_floor(self):
+        activity = summarize_activity(
+            build_raw_activity(
+                "2026-03-12",
+                activity_id=23,
+                type_key="workout",
+                name="Indoor Bike",
+                duration_min=60,
+                training_load=15,
+            )
+        )
+
+        self.assertEqual(activity.training_load, 15.0)
 
     def test_strength_activity_keeps_higher_garmin_load(self):
         activity = summarize_activity(

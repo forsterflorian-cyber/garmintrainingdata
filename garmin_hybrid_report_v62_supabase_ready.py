@@ -50,6 +50,7 @@ STRENGTH_ACTIVITY_LABELS = (
     "strength training",
     "weight training",
     "weight lifting",
+    "egym training",
 )
 
 
@@ -251,7 +252,7 @@ def _matches_strength_activity_label(value: Any) -> bool:
     if not normalized:
         return False
     tokens = set(normalized.split())
-    if "strength" in tokens or "gym" in tokens:
+    if "strength" in tokens:
         return True
     collapsed = normalized.replace(" ", "")
     return (
