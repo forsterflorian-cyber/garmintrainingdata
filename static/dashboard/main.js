@@ -839,6 +839,14 @@ function syncStatusSummary(sync) {
   return sync.statusReason ? display.reasonLabel || syncReasonLabel(sync.statusReason) : "No Sync Detail.";
 }
 
+function syncBackfillDays() {
+  const days = Number(state.syncStatus?.targetHistoryDays);
+  if (Number.isFinite(days) && days > 0) {
+    return Math.trunc(days);
+  }
+  return 180;
+}
+
 function renderSyncUi(sync = state.syncStatus) {
   renderSyncStatusBadge(sync || {});
   renderSyncStatusPanel(sync || {});
@@ -1678,7 +1686,7 @@ function planSyncMeta(sync) {
     return "Reconnect Garmin";
   }
   if (sync.syncState === "error") {
-    return "Check Sync Surface";
+    return "Check Sync tab";
   }
   return display.reasonLabel || syncReasonLabel(sync.statusReason);
 }
@@ -1690,7 +1698,7 @@ function bindSyncActionButtons() {
       if (action === "update") {
         void startSyncRequest("/api/sync/update", null, "syncing");
       } else if (action === "backfill") {
-        void startSyncRequest("/api/sync/backfill", { days: 180 }, "backfilling");
+        void startSyncRequest("/api/sync/backfill", { days: syncBackfillDays() }, "backfilling");
       } else if (action === "retry") {
         void startSyncRequest("/api/sync/update", null, "syncing");
       }

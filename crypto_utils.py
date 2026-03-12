@@ -1,10 +1,11 @@
 import base64
-from cryptography.fernet import Fernet
-import os
 import hashlib
+from cryptography.fernet import Fernet
+
+from runtime_config import require_env
 
 def get_cipher():
-    secret = os.environ["APP_SECRET_KEY"]
+    secret = require_env("APP_SECRET_KEY", context="Garmin credential encryption")
     key = hashlib.sha256(secret.encode()).digest()
     key = base64.urlsafe_b64encode(key)
     return Fernet(key)

@@ -38,11 +38,11 @@ function withFakeDocument(elements, callback) {
 test("describeTrainingFocus returns the expected helper copy", () => {
   assert.deepEqual(describeTrainingFocus("hybrid"), {
     label: "Hybrid",
-    description: "Balanced endurance and strength training",
+    description: "balanced endurance + strength",
   });
   assert.deepEqual(describeTrainingFocus("unknown"), {
     label: "Hybrid",
-    description: "Balanced endurance and strength training",
+    description: "balanced endurance + strength",
   });
 });
 
@@ -78,6 +78,6 @@ test("syncTrainingFocusHelp updates helper copy for the selected mode", () => {
   });
 
   assert.equal(elements.modeSelect.value, "bike");
-  assert.equal(elements.modeSelect.title, "Bike: Cycling-focused training");
-  assert.equal(elements.modeHelpText.textContent, "Bike: Cycling-focused training");
+  assert.equal(elements.modeSelect.title, "Bike = cycling-focused");
+  assert.equal(elements.modeHelpText.textContent, "Bike = cycling-focused");
 });

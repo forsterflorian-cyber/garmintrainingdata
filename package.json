@@ -1,6 +1,11 @@
 {
   "private": true,
   "type": "module",
+  "scripts": {
+    "test": "npm run test:js && npm run test:py",
+    "test:js": "node --test",
+    "test:py": "python -m unittest discover -p \"test*.py\""
+  },
   "devDependencies": {
     "playwright-core": "^1.54.2"
   }

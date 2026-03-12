@@ -1,5 +1,7 @@
 import { el, formatNumber } from "../../lib/formatters.js";
 
+const READINESS_EMPTY_STATE = "Not enough readiness history for the readiness chart.";
+
 export function renderReadinessTrendCard(series, activeDate) {
   drawLineChart("readinessChart", series || [], [{ key: "value", color: "#69e0b5" }], activeDate);
 }
@@ -10,7 +12,8 @@ function drawLineChart(svgId, series, lines, activeDate) {
     return;
   }
   if (!series.length) {
-    svg.innerHTML = "";
+    svg.innerHTML = emptyStateMarkup();
+    svg.dataset.empty = "true";
     return;
   }
 
@@ -31,7 +34,8 @@ function drawLineChart(svgId, series, lines, activeDate) {
   });
 
   if (!values.length) {
-    svg.innerHTML = "";
+    svg.innerHTML = emptyStateMarkup();
+    svg.dataset.empty = "true";
     return;
   }
 
@@ -74,4 +78,12 @@ function drawLineChart(svgId, series, lines, activeDate) {
   });
 
   svg.innerHTML = markup;
+  svg.dataset.empty = "false";
+}
+
+function emptyStateMarkup() {
+  return `
+    <rect x="0" y="0" width="920" height="320" fill="rgba(4,16,22,0.72)"></rect>
+    <text x="460" y="160" text-anchor="middle" font-size="16" fill="rgba(159,176,170,0.84)">${READINESS_EMPTY_STATE}</text>
+  `;
 }

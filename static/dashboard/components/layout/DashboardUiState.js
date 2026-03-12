@@ -3,19 +3,19 @@ import { el } from "../../lib/formatters.js";
 export const TRAINING_FOCUS_COPY = Object.freeze({
   hybrid: {
     label: "Hybrid",
-    description: "Balanced endurance and strength training",
+    description: "balanced endurance + strength",
   },
   run: {
     label: "Run",
-    description: "Running-focused training",
+    description: "running-focused",
   },
   bike: {
     label: "Bike",
-    description: "Cycling-focused training",
+    description: "cycling-focused",
   },
   strength: {
     label: "Strength",
-    description: "Strength training focus",
+    description: "strength-focused",
   },
 });
 
@@ -30,11 +30,11 @@ export function syncTrainingFocusHelp(mode = "hybrid") {
 
   if (select) {
     select.value = mode in TRAINING_FOCUS_COPY ? mode : "hybrid";
-    select.title = `${copy.label}: ${copy.description}`;
+    select.title = `${copy.label} = ${copy.description}`;
   }
 
   if (help) {
-    help.textContent = `${copy.label}: ${copy.description}`;
+    help.textContent = `${copy.label} = ${copy.description}`;
   }
 }
 

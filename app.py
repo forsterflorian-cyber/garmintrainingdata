@@ -29,11 +29,17 @@ from garmin_hybrid_report_v62_supabase_ready import (
 )
 from garmin_session_store import GarminSessionStore
 from observability import ErrorCategory, ServiceError, configure_structured_logging, get_logger, log_event, log_exception
+from runtime_config import validate_server_runtime
 from supabase_client import get_supabase_admin_client
 from training_config import TRAINING_CONFIG
 
 
-supabase = get_supabase_admin_client()
+try:
+    validate_server_runtime()
+    supabase = get_supabase_admin_client()
+except RuntimeError as exc:
+    raise RuntimeError(f"Application startup failed. {exc}") from exc
+
 store = GarminSessionStore(supabase)
 garmin_connection_service = GarminConnectionService(
     session_store=store,

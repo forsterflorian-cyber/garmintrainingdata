@@ -58,7 +58,7 @@ test("range changes show the loading overlay and mode changes refresh helper cop
     const modeHelp = page.locator("#modeHelpText");
 
     assert.equal(await overlay.isHidden(), true);
-    assert.match(await modeHelp.textContent(), /Hybrid: Balanced endurance and strength training/);
+    assert.match(await modeHelp.textContent(), /Hybrid = balanced endurance \+ strength/);
 
     await rangeSelect.selectOption("84");
     await page.waitForFunction(() => !document.getElementById("dashboardLoadingOverlay").hidden);
@@ -68,7 +68,7 @@ test("range changes show the loading overlay and mode changes refresh helper cop
 
     await modeSelect.selectOption("bike");
     await page.waitForFunction(() => !document.getElementById("dashboardLoadingOverlay").hidden);
-    assert.match(await modeHelp.textContent(), /Bike: Cycling-focused training/);
+    assert.match(await modeHelp.textContent(), /Bike = cycling-focused/);
     await page.waitForFunction(() => document.getElementById("dashboardLoadingOverlay").hidden);
     assert.equal(await page.locator("#loadStatus").textContent(), "Loaded mode");
   } finally {

@@ -1,3 +1,4 @@
+{% set auth_disabled = missing_public_config | length > 0 %}
 <section class="auth-shell">
   <article class="panel auth-flow-card">
     <p class="eyebrow">Authentication</p>
@@ -5,12 +6,18 @@
     <p class="muted-copy">
       Authentication is the only step here. Garmin setup happens after login, in its own onboarding screen.
     </p>
+    {% if auth_disabled %}
+    <div class="status-banner status-banner-critical">
+      <strong>Setup incomplete.</strong>
+      <span>Missing {{ missing_public_config | join(", ") }}. Copy the values from `.env.example` and restart the app before signing in.</span>
+    </div>
+    {% endif %}
     <div class="status-banner status-banner-muted">
       <strong>Sign in to continue.</strong>
       <span>Email/password and Google both use the same post-login Garmin setup check.</span>
     </div>
     <div class="auth-provider-stack">
-      <button class="btn btn-secondary btn-provider" type="button" data-auth-action="login" data-auth-provider="google">
+      <button class="btn btn-secondary btn-provider" type="button" data-auth-action="login" data-auth-provider="google" {% if auth_disabled %}disabled{% endif %}>
         Continue with Google
       </button>
     </div>
@@ -19,17 +26,17 @@
     </div>
     <label class="field">
       <span>Email</span>
-      <input id="authEmail" type="email" placeholder="name@example.com" autocomplete="email">
+      <input id="authEmail" type="email" placeholder="name@example.com" autocomplete="email" {% if auth_disabled %}disabled{% endif %}>
     </label>
     <label class="field">
       <span>Password</span>
-      <input id="authPassword" type="password" placeholder="Your account password" autocomplete="current-password">
+      <input id="authPassword" type="password" placeholder="Your account password" autocomplete="current-password" {% if auth_disabled %}disabled{% endif %}>
     </label>
     <div class="button-row">
-      <button class="btn btn-primary" type="button" data-auth-action="login" data-auth-provider="password">
+      <button class="btn btn-primary" type="button" data-auth-action="login" data-auth-provider="password" {% if auth_disabled %}disabled{% endif %}>
         Sign In
       </button>
-      <button class="btn btn-secondary" type="button" data-auth-action="signup" data-auth-provider="password">
+      <button class="btn btn-secondary" type="button" data-auth-action="signup" data-auth-provider="password" {% if auth_disabled %}disabled{% endif %}>
         Create Account
       </button>
     </div>
