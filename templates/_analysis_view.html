@@ -120,53 +120,46 @@
         <article class="chart-card">
           <div class="chart-head">
             <div>
-              <p class="eyebrow">Load Trend</p>
-              <h3>Daily Vs Acute Load</h3>
+              <p class="eyebrow">Load Channel</p>
+              <h3>Daily Vs 7d / 28d Load</h3>
             </div>
-            <p class="muted-copy">Use this to spot trend pressure behind the call.</p>
+            <article id="loadMomentumCard" class="trend-callout" data-tone="neutral">
+              <span class="trend-callout-label">Load Momentum</span>
+              <strong id="loadMomentumValue">No data</strong>
+              <small id="loadMomentumLabel">Need a complete previous 7d window.</small>
+            </article>
           </div>
+          <p class="muted-copy">Bars show daily load while 7d and 28d lines reveal build, taper, and spike patterns.</p>
           <svg id="loadChart" class="chart-surface" viewBox="0 0 920 320" preserveAspectRatio="none"></svg>
         </article>
       </div>
     </div>
 
     <div class="tab-panel" data-panel="history">
-      <div class="load-grid">
-        <article class="chart-card">
-          <div class="chart-head">
-            <div>
-              <p class="eyebrow">Load Heatmap</p>
-              <h3>Training Stress Density</h3>
-            </div>
-            <p class="muted-copy">Use the heatmap as the quickest day selector for Analysis. Plan stays unchanged.</p>
+      <article class="chart-card history-card">
+        <div class="chart-head">
+          <div>
+            <p class="eyebrow">History</p>
+            <h3>Day-By-Day Analysis</h3>
           </div>
-          <div id="loadHeatmap" class="heatmap"></div>
-        </article>
-
-        <article class="chart-card">
-          <div class="chart-head">
-            <div>
-              <p class="eyebrow">Decision History</p>
-              <h3>Day-By-Day Table</h3>
-            </div>
-            <p class="muted-copy">The table stays for detail, but the heatmap is the faster selector.</p>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Readiness</th>
-                  <th>Load</th>
-                  <th>Ratio</th>
-                  <th>Recommendation</th>
-                </tr>
-              </thead>
-              <tbody id="historyTable"></tbody>
-            </table>
-          </div>
-        </article>
-      </div>
+          <p class="muted-copy">Use the inline heat cell in each row to change the selected analysis day. Activities follows the same selection.</p>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Heat</th>
+                <th>Date</th>
+                <th>Readiness</th>
+                <th>Load</th>
+                <th>Ratio</th>
+                <th>Recommendation</th>
+              </tr>
+            </thead>
+            <tbody id="historyTable"></tbody>
+          </table>
+        </div>
+      </article>
     </div>
 
     <div class="tab-panel" data-panel="activities">
@@ -179,7 +172,7 @@
             </div>
             <p class="muted-copy">Raw Garmin activities stay available, with a recommendation check for the selected day.</p>
           </div>
-          <div id="activityDaySelector" class="activity-day-selector"></div>
+          <p id="activitySelectionMeta" class="muted-copy activity-selection-meta">History selection drives this view.</p>
           <div id="activityDaySummary" class="activity-day-summary"></div>
           <div id="activityList" class="activity-list"></div>
         </article>

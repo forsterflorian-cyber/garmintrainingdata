@@ -171,15 +171,52 @@ def build_dashboard_payload(
             "filters": {"periodDays": period_days, "baselineDays": period_days},
             "account": account_summary or {},
             "sync": sync_summary or {},
+            "today": {
+                "pulseOx": None,
+                "recommendationDay": selected_date,
+                "activities": [],
+                "sessionType": None,
+            },
+            "baseline": {},
             "history": {"rows": []},
-            "trends": {"readinessSeries": [], "loadSeries": []},
+            "trends": {"readinessSeries": [], "loadSeries": [], "loadChannelSeries": []},
             "summary": {"avgReadiness": None, "avgLoad": None, "days": 0},
+            "load": {
+                "acute7d": None,
+                "chronic28d": None,
+                "ratio7to28": None,
+                "momentum": {
+                    "value": None,
+                    "label": None,
+                    "current7dLoad": None,
+                    "previous7dLoad": None,
+                },
+            },
+            "decision": {
+                "primaryRecommendation": None,
+                "loadTolerance": None,
+                "why": [],
+                "avoid": [],
+                "bestOptions": [],
+                "statusChips": [],
+                "summaryText": None,
+            },
+            "comparisons": {},
+            "baselineBars": [],
             "reference": {
                 "rangeDays": period_days,
                 "baselineDays": period_days,
                 "baselineSource": "rolling",
                 "baselineSampleDays": 0,
                 "loadRatioWindowLabel": "7d / 28d load ratio",
+            },
+            "detail": {
+                "activeDate": selected_date,
+                "sessionType": None,
+                "activities": [],
+                "legacyRecommendations": {},
+                "legacyUnits": {},
+                "aiPrompt": None,
             },
         }
 
@@ -216,6 +253,15 @@ def build_dashboard_payload(
                     "chronic28d": item.get("chronic28d"),
                     "ratio7to28": item.get("ratio7to28"),
                     "primaryRecommendation": item["decision"]["primaryRecommendation"],
+                }
+                for item in filtered_items
+            ],
+            "loadChannelSeries": [
+                {
+                    "date": item["date"],
+                    "dailyLoad": item.get("loadDayRaw"),
+                    "load7d": item.get("acute7d"),
+                    "load28d": item.get("chronic28d"),
                 }
                 for item in filtered_items
             ],
@@ -302,6 +348,7 @@ def payload_to_day_item(payload: Dict[str, Any], *, mode: str) -> Dict[str, Any]
     legacy_recommendations = _dict_or_empty(payload.get("recommendations"))
     legacy_units = _dict_or_empty(payload.get("units"))
     stored_baseline = build_baseline_metrics_snapshot(readiness)
+    load_day = _safe_number(summary.get("training_load_sum"))
 
     return {
         "date": payload.get("date"),
@@ -318,7 +365,8 @@ def payload_to_day_item(payload: Dict[str, Any], *, mode: str) -> Dict[str, Any]
         "legacyRecommendations": legacy_recommendations,
         "legacyUnits": legacy_units,
         "aiPrompt": payload.get("ai_prompt") if isinstance(payload.get("ai_prompt"), str) else None,
-        "loadDay": _safe_number(summary.get("training_load_sum")) or 0.0,
+        "loadDay": load_day or 0.0,
+        "loadDayRaw": load_day,
         "acute7d": _safe_number(load_metrics.get("load_7d")),
         "chronic28d": _safe_number(load_metrics.get("load_28d")),
         "acute7dDailyAvg": _safe_number(load_metrics.get("load_7d_daily_avg")),

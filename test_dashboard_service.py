@@ -3,12 +3,68 @@ from __future__ import annotations
 import sys
 import types
 import unittest
+from datetime import date, timedelta
 
 fake_garminconnect = types.ModuleType("garminconnect")
 fake_garminconnect.Garmin = object
 sys.modules.setdefault("garminconnect", fake_garminconnect)
 
 from dashboard_service import build_dashboard_payload, build_prompt_from_payload
+
+
+def build_training_row(
+    day: str,
+    *,
+    load_day: float | None = 20.0,
+    load_7d: float | None = None,
+    load_28d: float | None = None,
+) -> dict:
+    load_ratio = round(load_7d / load_28d, 3) if load_7d not in (None, 0) and load_28d not in (None, 0) else None
+    return {
+        "date": day,
+        "data": {
+            "date": day,
+            "morning": {
+                "hrv": 55,
+                "resting_hr": 49,
+                "sleep_h": 7.4,
+                "respiration": 14.1,
+            },
+            "readiness": {
+                "score": 72,
+                "baselines": {
+                    "hrv": {"baseline": 52},
+                    "resting_hr": {"baseline": 50},
+                    "sleep_h": {"baseline": 7.0},
+                    "respiration": {"baseline": 14.0},
+                },
+            },
+            "summary": {"training_load_sum": load_day},
+            "load_metrics": {
+                "load_7d": load_7d,
+                "load_28d": load_28d,
+                "load_7d_daily_avg": round(load_7d / 7, 2) if load_7d is not None else None,
+                "load_28d_daily_avg": round(load_28d / 28, 2) if load_28d is not None else None,
+                "load_ratio": load_ratio,
+            },
+            "activities": [],
+        },
+    }
+
+
+def build_load_history(start_day: str, daily_loads: list[float | None]) -> list[dict]:
+    start_value = date.fromisoformat(start_day)
+    rows = []
+    for index, load_day in enumerate(daily_loads):
+        current_day = (start_value + timedelta(days=index)).isoformat()
+        current_window = daily_loads[max(0, index - 6):index + 1]
+        current_values = [value for value in current_window if value is not None]
+        load_7d = round(sum(current_values), 1) if len(current_values) == len(current_window) else None
+        chronic_window = daily_loads[max(0, index - 27):index + 1]
+        chronic_values = [value for value in chronic_window if value is not None]
+        load_28d = round(sum(chronic_values), 1) if len(chronic_values) == len(chronic_window) else None
+        rows.append(build_training_row(current_day, load_day=load_day, load_7d=load_7d, load_28d=load_28d))
+    return rows
 
 
 class DashboardServiceHardeningTests(unittest.TestCase):
@@ -162,6 +218,134 @@ class DashboardServiceHardeningTests(unittest.TestCase):
         self.assertEqual(payload_5d["reference"]["baselineSource"], "rolling")
         self.assertEqual(payload_4d["history"]["rows"][0]["date"], "2026-03-03")
         self.assertEqual(payload_5d["history"]["rows"][0]["date"], "2026-03-02")
+
+    def test_load_momentum_marks_rising_load(self):
+        rows = build_load_history("2026-03-01", [10.0] * 7 + [12.0] * 7)
+
+        payload = build_dashboard_payload(rows, selected_date="2026-03-14", period_days=14)
+
+        self.assertEqual(payload["load"]["momentum"]["value"], 0.2)
+        self.assertEqual(payload["load"]["momentum"]["label"], "Rising")
+        self.assertEqual(payload["load"]["momentum"]["previous7dLoad"], 70.0)
+
+    def test_load_momentum_marks_falling_load(self):
+        rows = build_load_history("2026-03-01", [15.0] * 7 + [10.0] * 7)
+
+        payload = build_dashboard_payload(rows, selected_date="2026-03-14", period_days=14)
+
+        self.assertEqual(payload["load"]["momentum"]["value"], -0.333)
+        self.assertEqual(payload["load"]["momentum"]["label"], "Falling")
+        self.assertEqual(payload["load"]["momentum"]["previous7dLoad"], 105.0)
+
+    def test_load_momentum_marks_stable_load(self):
+        rows = build_load_history("2026-03-01", [10.0] * 7 + [10.5] * 7)
+
+        payload = build_dashboard_payload(rows, selected_date="2026-03-14", period_days=14)
+
+        self.assertEqual(payload["load"]["momentum"]["value"], 0.05)
+        self.assertEqual(payload["load"]["momentum"]["label"], "Stable")
+
+    def test_load_momentum_is_null_when_previous_window_missing(self):
+        rows = build_load_history("2026-03-01", [10.0] * 13)
+
+        payload = build_dashboard_payload(rows, selected_date="2026-03-13", period_days=13)
+
+        self.assertIsNone(payload["load"]["momentum"]["value"])
+        self.assertIsNone(payload["load"]["momentum"]["label"])
+
+    def test_load_momentum_is_null_when_previous_window_is_zero(self):
+        rows = build_load_history("2026-03-01", [0.0] * 7 + [10.0] * 7)
+
+        payload = build_dashboard_payload(rows, selected_date="2026-03-14", period_days=14)
+
+        self.assertIsNone(payload["load"]["momentum"]["value"])
+        self.assertIsNone(payload["load"]["momentum"]["label"])
+        self.assertEqual(payload["load"]["momentum"]["previous7dLoad"], 0.0)
+
+    def test_load_channel_series_includes_daily_and_window_loads(self):
+        rows = build_load_history("2026-03-01", [12.0, 18.0, 25.0])
+
+        payload = build_dashboard_payload(rows, selected_date="2026-03-03", period_days=3)
+
+        self.assertEqual(
+            payload["trends"]["loadChannelSeries"],
+            [
+                {"date": "2026-03-01", "dailyLoad": 12.0, "load7d": 12.0, "load28d": 12.0},
+                {"date": "2026-03-02", "dailyLoad": 18.0, "load7d": 30.0, "load28d": 30.0},
+                {"date": "2026-03-03", "dailyLoad": 25.0, "load7d": 55.0, "load28d": 55.0},
+            ],
+        )
+
+    def test_load_channel_series_preserves_sparse_values(self):
+        rows = [
+            build_training_row("2026-03-01", load_day=15.0, load_7d=15.0, load_28d=15.0),
+            build_training_row("2026-03-02", load_day=None, load_7d=None, load_28d=15.0),
+        ]
+
+        payload = build_dashboard_payload(rows, selected_date="2026-03-02", period_days=2)
+
+        self.assertEqual(
+            payload["trends"]["loadChannelSeries"],
+            [
+                {"date": "2026-03-01", "dailyLoad": 15.0, "load7d": 15.0, "load28d": 15.0},
+                {"date": "2026-03-02", "dailyLoad": None, "load7d": None, "load28d": 15.0},
+            ],
+        )
+
+    def test_empty_history_keeps_channel_payload_safe(self):
+        payload = build_dashboard_payload([], selected_date="2026-03-14")
+
+        self.assertEqual(payload["trends"]["loadChannelSeries"], [])
+        self.assertIsNone(payload["load"]["momentum"]["value"])
+        self.assertIsNone(payload["load"]["momentum"]["label"])
+        self.assertEqual(payload["detail"]["activeDate"], "2026-03-14")
+        self.assertEqual(payload["detail"]["activities"], [])
+        self.assertEqual(payload["decision"]["why"], [])
+        self.assertEqual(payload["baselineBars"], [])
+
+    def test_partial_day_payload_keeps_missing_metrics_safe(self):
+        rows = [
+            {
+                "date": "2026-03-14",
+                "data": {
+                    "date": "2026-03-14",
+                    "morning": {},
+                    "readiness": {},
+                    "summary": {},
+                    "load_metrics": {},
+                    "activities": [None, {"type_key": "walking"}],
+                },
+            },
+        ]
+
+        payload = build_dashboard_payload(rows, selected_date="2026-03-14", period_days=7)
+
+        self.assertEqual(payload["date"], "2026-03-14")
+        self.assertEqual(len(payload["history"]["rows"]), 1)
+        self.assertIsNone(payload["history"]["rows"][0]["readiness"])
+        self.assertIsNone(payload["history"]["rows"][0]["ratio7to28"])
+        self.assertEqual(payload["detail"]["activities"], [
+            {
+                "activity_id": None,
+                "start_local": "",
+                "date_local": "",
+                "type_key": "walking",
+                "name": "walking",
+                "duration_min": None,
+                "distance_km": None,
+                "avg_hr": None,
+                "max_hr": None,
+                "avg_power": None,
+                "max_power": None,
+                "avg_speed_kmh": None,
+                "pace_min_per_km": None,
+                "aerobic_te": None,
+                "anaerobic_te": None,
+                "training_load": None,
+                "sport_tag": "recovery",
+                "sessionType": "recovery",
+            },
+        ])
 
 
 if __name__ == "__main__":

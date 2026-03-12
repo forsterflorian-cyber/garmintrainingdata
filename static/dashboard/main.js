@@ -4,6 +4,7 @@ import { renderNextDaysOutlookPanel } from "./components/decision/NextDaysOutloo
 import { renderTomorrowImpactPanel } from "./components/decision/TomorrowImpactPanel.js";
 import { renderTrainingDecisionCard } from "./components/decision/TrainingDecisionCard.js";
 import { renderWhyRecommendationPanel } from "./components/decision/WhyRecommendationPanel.js";
+import { renderAnalysisHistorySurface } from "./components/analysis/AnalysisHistorySurface.js";
 import { setAuthStatus, setGarminStatus } from "./components/layout/DashboardHeader.js";
 import { hydrateRangeSelect } from "./components/layout/FocusFilters.js";
 import { renderBaselineComparisonCard } from "./components/metrics/BaselineComparisonCard.js";
@@ -1186,206 +1187,6 @@ function renderDebug(payload, forecast) {
   }
 }
 
-function renderHeatmap(rows, activeDate) {
-  const target = el("loadHeatmap");
-  if (!rows.length) {
-    target.innerHTML = "";
-    return;
-  }
-
-  const maxLoad = Math.max(...rows.map((row) => Number(row.loadDay || 0)), 1);
-  target.innerHTML = rows.map((row) => {
-    const strength = Math.min(1, Number(row.loadDay || 0) / maxLoad);
-    const activeClass = row.date === activeDate ? "is-active" : "";
-    return `
-      <button
-        class="heat-cell ${activeClass}"
-        type="button"
-        data-day="${safeHtml(row.date)}"
-        data-label="${safeHtml(row.date.slice(5))}"
-        style="--strength:${strength.toFixed(3)}"
-        title="${safeHtml(`${row.date}: ${formatNumber(row.loadDay, 1)}`)}"
-        aria-pressed="${row.date === activeDate ? "true" : "false"}"
-        aria-label="${safeHtml(`Select ${row.date} for analysis`)}"
-      ></button>
-    `;
-  }).join("");
-
-  target.querySelectorAll(".heat-cell[data-day]").forEach((cell) => {
-    cell.addEventListener("click", () => {
-      setAnalysisDay(cell.dataset.day);
-    });
-  });
-}
-
-function renderHistoryTable(rows, activeDate) {
-  const target = el("historyTable");
-  if (!rows.length) {
-    target.innerHTML = '<tr><td colspan="5" class="muted-copy">No History In Range.</td></tr>';
-    return;
-  }
-
-  target.innerHTML = rows.slice().reverse().map((row) => `
-    <tr class="history-row ${row.date === activeDate ? "is-active" : ""}" data-day="${safeHtml(row.date)}">
-      <td>${safeHtml(row.date)}</td>
-      <td>${formatNumber(row.readiness, 0)}</td>
-      <td>${formatNumber(row.loadDay, 1)}</td>
-      <td>${formatNumber(row.ratio7to28, 2)}</td>
-      <td>${safeHtml(row.primaryRecommendation)}</td>
-    </tr>
-  `).join("");
-
-  target.querySelectorAll(".history-row").forEach((row) => {
-    row.addEventListener("click", () => {
-      setAnalysisDay(row.dataset.day);
-    });
-  });
-}
-
-function dominantSportTag(activities) {
-  const totals = new Map();
-  activities.forEach((activity) => {
-    const sportTag = safeText(activity?.sport_tag, "");
-    if (!sportTag) {
-      return;
-    }
-    const loadValue = safeNumeric(activity?.training_load) || 0;
-    const durationValue = safeNumeric(activity?.duration_min) || 0;
-    const weight = loadValue > 0 ? loadValue : durationValue;
-    totals.set(sportTag, (totals.get(sportTag) || 0) + weight);
-  });
-
-  let winner = null;
-  let winnerScore = -1;
-  totals.forEach((score, sportTag) => {
-    if (score > winnerScore) {
-      winner = sportTag;
-      winnerScore = score;
-    }
-  });
-  return winner;
-}
-
-function comparisonBadge(comparison) {
-  if (!comparison?.label) {
-    return "";
-  }
-  return `<span class="activity-comparison-badge" data-tone="${safeHtml(comparison.tone || "neutral")}">${safeHtml(comparison.label)}</span>`;
-}
-
-function renderActivityDaySelector(rows, activeDate) {
-  const target = el("activityDaySelector");
-  if (!target) {
-    return;
-  }
-  if (!rows.length) {
-    target.innerHTML = "";
-    return;
-  }
-
-  const orderedRows = rows.slice().reverse();
-  const activeIndex = orderedRows.findIndex((row) => row.date === activeDate);
-  const previous = activeIndex >= 0 && activeIndex < orderedRows.length - 1 ? orderedRows[activeIndex + 1] : null;
-  const next = activeIndex > 0 ? orderedRows[activeIndex - 1] : null;
-
-  target.innerHTML = `
-    <div class="activity-day-nav">
-      <button class="btn btn-secondary activity-day-btn" type="button" data-direction="prev" ${previous ? "" : "disabled"}>Prev Day</button>
-      <label class="toolbar-field activity-day-field">
-        <span>Day</span>
-        <select id="activityDaySelect">
-          ${orderedRows.map((row) => `<option value="${safeHtml(row.date)}" ${row.date === activeDate ? "selected" : ""}>${safeHtml(row.date)}</option>`).join("")}
-        </select>
-      </label>
-      <button class="btn btn-secondary activity-day-btn" type="button" data-direction="next" ${next ? "" : "disabled"}>Next Day</button>
-    </div>
-  `;
-
-  el("activityDaySelect")?.addEventListener("change", (event) => {
-    setAnalysisDay(event.target.value);
-  });
-  target.querySelector('[data-direction="prev"]')?.addEventListener("click", () => {
-    if (previous?.date) {
-      setAnalysisDay(previous.date);
-    }
-  });
-  target.querySelector('[data-direction="next"]')?.addEventListener("click", () => {
-    if (next?.date) {
-      setAnalysisDay(next.date);
-    }
-  });
-}
-
-function renderActivities(payload) {
-  const activities = payload?.detail?.activities || [];
-  const historyRows = payload?.history?.rows || [];
-  if (!payload?.date && !historyRows.length) {
-    el("activityHeadline").textContent = "Focus Day Activities";
-    el("activityDaySelector").innerHTML = "";
-    el("activityDaySummary").innerHTML = "";
-    el("activityList").innerHTML = '<div class="muted-copy">No Activities For This Day.</div>';
-    return;
-  }
-  const dominantDaySport = dominantSportTag(activities);
-  const dayComparison = compareCompletedSessionToDecision(payload?.detail?.sessionType, payload?.decision, {
-    sportTag: dominantDaySport,
-  });
-  const activitiesWithComparison = activities.map((activity) => ({
-    activity,
-    comparison: compareCompletedSessionToDecision(activity.sessionType, payload?.decision, { sportTag: activity.sport_tag }),
-  }));
-  const totalDuration = activities.reduce((sum, activity) => sum + (safeNumeric(activity?.duration_min) || 0), 0);
-  const totalLoad = activities.reduce((sum, activity) => sum + (safeNumeric(activity?.training_load) || 0), 0);
-
-  renderActivityDaySelector(historyRows, payload?.date);
-  el("activityHeadline").textContent = payload?.date ? `Activities On ${payload.date}` : "Focus Day Activities";
-  el("activityDaySummary").innerHTML = `
-    <article class="activity-day-card">
-      <div class="relative-head">
-        <div>
-          <div class="relative-title">Day Context</div>
-          <div class="muted-copy">${safeHtml(safeText(payload?.decision?.primaryRecommendation, "No recommendation"))}</div>
-        </div>
-        ${comparisonBadge(dayComparison)}
-      </div>
-      <div class="activity-chips">
-        <span class="chip">${safeHtml(`${activities.length} activit${activities.length === 1 ? "y" : "ies"}`)}</span>
-        <span class="chip">Duration ${formatNumber(totalDuration, 0)} min</span>
-        <span class="chip">Load ${formatNumber(totalLoad, 0)}</span>
-      </div>
-      ${dayComparison?.detail ? `<p class="muted-copy activity-comparison-detail">${safeHtml(dayComparison.detail)}</p>` : ""}
-    </article>
-  `;
-  if (!activities.length) {
-    el("activityList").innerHTML = '<div class="muted-copy">No Activities For This Day.</div>';
-    return;
-  }
-
-  el("activityList").innerHTML = activitiesWithComparison.map(({ activity, comparison }) => `
-    <article class="activity-card">
-      <div class="relative-head">
-        <div>
-          <div class="relative-title">${safeHtml(activity.name || activity.type_key || "Activity")}</div>
-          <div class="muted-copy">${safeHtml(activity.type_key || "-")} | ${safeHtml(activity.start_local || "-")}</div>
-        </div>
-        <div class="activity-card-meta">
-          ${comparisonBadge(comparison)}
-          <div class="relative-value">${formatNumber(activity.duration_min, 0)} min</div>
-        </div>
-      </div>
-      <div class="activity-chips">
-        <span class="chip">Avg HR ${formatNumber(activity.avg_hr, 0)}</span>
-        <span class="chip">Max HR ${formatNumber(activity.max_hr, 0)}</span>
-        <span class="chip">TE ${formatNumber(activity.aerobic_te, 1)} / ${formatNumber(activity.anaerobic_te, 1)}</span>
-        <span class="chip">Load ${formatNumber(activity.training_load, 1)}</span>
-      </div>
-      ${comparison?.detail
-        ? `<p class="muted-copy activity-comparison-detail">${safeHtml(comparison.detail)}</p>`
-        : ""}
-    </article>
-  `).join("");
-}
-
 function renderModeUnits(payload) {
   const units = (payload?.detail?.legacyUnits || {})[state.mode] || (payload?.detail?.legacyUnits || {}).hybrid || [];
   el("unitIntro").textContent = state.mode === "hybrid"
@@ -1432,10 +1233,12 @@ function renderAnalysisSurface(payload) {
   renderWhyRecommendationPanel(payload?.decision?.why || []);
   renderBaselineComparisonCard(payload?.baselineBars || []);
   renderReadinessTrendCard(payload?.trends?.readinessSeries || [], payload?.date || null);
-  renderLoadTrendCard(payload?.trends?.loadSeries || [], payload?.date || null);
-  renderHeatmap(payload?.history?.rows || [], payload?.date || null);
-  renderHistoryTable(payload?.history?.rows || [], payload?.date || null);
-  renderActivities(payload || {});
+  renderLoadTrendCard(
+    payload?.trends?.loadChannelSeries || payload?.trends?.loadSeries || [],
+    payload?.date || null,
+    payload?.load?.momentum || null,
+  );
+  renderAnalysisHistorySurface(payload || {}, { onSelectDay: setAnalysisDay });
   renderModeUnits(payload || {});
   renderPrompt(payload || {});
   renderSummary(payload || {});

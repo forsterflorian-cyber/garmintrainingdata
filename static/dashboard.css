@@ -609,6 +609,49 @@ input:disabled {
   padding: 20px;
 }
 
+.trend-callout {
+  display: grid;
+  gap: 4px;
+  min-width: 180px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(173, 212, 202, 0.12);
+  background: rgba(4, 15, 20, 0.74);
+}
+
+.trend-callout-label {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-family: "IBM Plex Mono", monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.trend-callout strong {
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 1.3rem;
+  line-height: 1;
+}
+
+.trend-callout small {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.trend-callout[data-tone="rising"] {
+  border-color: rgba(255, 209, 102, 0.28);
+  background: rgba(36, 28, 9, 0.62);
+}
+
+.trend-callout[data-tone="falling"] {
+  border-color: rgba(99, 230, 190, 0.24);
+  background: rgba(8, 34, 30, 0.58);
+}
+
+.trend-callout[data-tone="stable"] {
+  border-color: rgba(173, 212, 202, 0.14);
+}
+
 .chart-surface {
   width: 100%;
   height: 320px;
@@ -644,6 +687,10 @@ th {
   letter-spacing: 0.08em;
 }
 
+.history-card .table-wrap {
+  margin-top: 16px;
+}
+
 .history-row {
   cursor: pointer;
   transition: background 140ms ease;
@@ -657,42 +704,35 @@ th {
   background: rgba(255, 184, 92, 0.1);
 }
 
-.heatmap {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(18px, 1fr));
-  gap: 8px;
-  margin-top: 18px;
+.history-heat-col {
+  width: 58px;
 }
 
-.heat-cell {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 1;
-  border-radius: 8px;
+.history-heat-cell {
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
   border: 1px solid rgba(173, 212, 202, 0.08);
   background: rgba(86, 208, 179, calc(0.08 + var(--strength) * 0.82));
   cursor: pointer;
   appearance: none;
   padding: 0;
+  transition: transform 140ms ease, border-color 140ms ease, outline 140ms ease;
 }
 
-.heat-cell.is-active {
+.history-heat-cell:hover {
+  transform: translateY(-1px);
+}
+
+.history-heat-cell.is-active {
+  border-color: rgba(255, 184, 92, 0.44);
   outline: 2px solid rgba(255, 184, 92, 0.82);
-}
-
-.heat-cell:focus-visible {
-  outline: 2px solid rgba(243, 240, 223, 0.88);
   outline-offset: 2px;
 }
 
-.heat-cell::after {
-  content: attr(data-label);
-  position: absolute;
-  left: 50%;
-  bottom: -1.35rem;
-  transform: translateX(-50%);
-  font-size: 0.68rem;
-  color: var(--muted);
+.history-heat-cell:focus-visible {
+  outline: 2px solid rgba(243, 240, 223, 0.88);
+  outline-offset: 2px;
 }
 
 .activity-list,
@@ -702,20 +742,9 @@ th {
   margin-top: 14px;
 }
 
-.activity-day-selector,
+.activity-selection-meta,
 .activity-day-summary {
   margin-top: 14px;
-}
-
-.activity-day-nav {
-  display: flex;
-  gap: 12px;
-  align-items: end;
-  flex-wrap: wrap;
-}
-
-.activity-day-field {
-  min-width: 220px;
 }
 
 .activity-day-card,

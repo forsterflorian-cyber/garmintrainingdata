@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 
 
 QUALITY_DAY_TYPES = {"threshold", "vo2"}
+LOAD_MOMENTUM_STABLE_BAND = 0.10
 
 
 def classify_day_intensity(day_item: Dict[str, Any]) -> str:
@@ -58,6 +59,10 @@ def build_load_snapshot(focus_item: Dict[str, Any], day_items: List[Dict[str, An
     hard_sessions_last_3d = count_quality_days(focus_date, day_items, days=3)
     hard_sessions_last_7d = count_quality_days(focus_date, day_items, days=7)
     ratio = _safe_number(focus_item.get("ratio7to28"))
+    current_7d_load = _safe_number(focus_item.get("acute7d"))
+    if current_7d_load is None:
+        current_7d_load = sum_window_load(focus_date, day_items, start_offset=0, end_offset=7)
+    previous_7d_load = sum_window_load(focus_date, day_items, start_offset=7, end_offset=14)
     chronic_daily_avg = _safe_number(focus_item.get("chronic28dDailyAvg"))
     yesterday_load = _safe_number(yesterday.get("loadDay")) if yesterday else None
     yesterday_session_type = yesterday.get("sessionType") if yesterday else None
@@ -74,7 +79,73 @@ def build_load_snapshot(focus_item: Dict[str, Any], day_items: List[Dict[str, An
         "hardSessionsLast7d": hard_sessions_last_7d,
         "yesterdaySessionType": yesterday_session_type,
         "veryHighYesterdayLoad": very_high_yesterday_load,
+        "momentum": compute_load_momentum(current_7d_load=current_7d_load, previous_7d_load=previous_7d_load),
     }
+
+
+def compute_load_momentum(*, current_7d_load: Optional[float], previous_7d_load: Optional[float]) -> Dict[str, Any]:
+    current_value = _safe_number(current_7d_load)
+    previous_value = _safe_number(previous_7d_load)
+    if current_value is None or previous_value in (None, 0.0):
+        return {
+            "value": None,
+            "label": None,
+            "current7dLoad": current_value,
+            "previous7dLoad": previous_value,
+        }
+
+    momentum = round((current_value - previous_value) / previous_value, 3)
+    return {
+        "value": momentum,
+        "label": load_momentum_label(momentum),
+        "current7dLoad": current_value,
+        "previous7dLoad": previous_value,
+    }
+
+
+def load_momentum_label(momentum: Optional[float]) -> Optional[str]:
+    value = _safe_number(momentum)
+    if value is None:
+        return None
+    if value > LOAD_MOMENTUM_STABLE_BAND:
+        return "Rising"
+    if value < -LOAD_MOMENTUM_STABLE_BAND:
+        return "Falling"
+    return "Stable"
+
+
+def sum_window_load(
+    focus_date: str,
+    day_items: List[Dict[str, Any]],
+    *,
+    start_offset: int,
+    end_offset: int,
+) -> Optional[float]:
+    expected_days = end_offset - start_offset
+    if expected_days <= 0:
+        return None
+
+    observed_offsets = set()
+    total_load = 0.0
+
+    for item in day_items:
+        date_value = item.get("date")
+        if not isinstance(date_value, str):
+            continue
+        distance = _date_distance(date_value, focus_date)
+        if distance is None or distance < start_offset or distance >= end_offset:
+            continue
+
+        load_value = _safe_number(item.get("loadDayRaw"))
+        if load_value is None:
+            return None
+
+        observed_offsets.add(distance)
+        total_load += load_value
+
+    if len(observed_offsets) != expected_days:
+        return None
+    return round(total_load, 1)
 
 
 def count_quality_days(focus_date: str, day_items: List[Dict[str, Any]], *, days: int) -> int:
