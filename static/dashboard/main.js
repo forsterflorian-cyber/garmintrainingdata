@@ -1978,13 +1978,18 @@ async function restoreSession() {
     state.sessionRestorePending = false;
   }
 }
-
+let hasLoadedInitialDashboard = false;
 if (supabaseClient) {
   supabaseClient.auth.onAuthStateChange((_event, session) => {
     applyCurrentSession(session || null);
-    // TOKEN_REFRESHED fires on tab focus when Supabase silently refreshes the JWT.
-    // Skip dashboard reload in that case — the Sync button handles manual refresh.
-    if (_event === "TOKEN_REFRESHED") {
+    // Supabase feuert diese Events bei Tab-Fokus. Wir überspringen sie,
+    // um den Dashboard-Reload und das Overlay zu verhindern.
+    if (_event === "TOKEN_REFRESHED" || _event === "USER_UPDATED") {
+      return;
+    }
+
+    // Verhindert, dass ein redundantes SIGNED_IN bei Tab-Fokus den Reload triggert.
+    if (_event === "SIGNED_IN" && hasLoadedInitialDashboard) {
       return;
     }
     window.setTimeout(async () => {
