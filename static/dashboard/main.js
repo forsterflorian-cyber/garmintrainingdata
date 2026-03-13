@@ -1997,12 +1997,16 @@ if (supabaseClient) {
         return;
       }
       if (state.currentSession?.access_token) {
+        // NEU: Flag auf true setzen, da der initiale Load nun stattfindet
+        hasLoadedInitialDashboard = true;
         await refreshAppState({
           requestedView: requestedAppViewFromPath(),
           replaceHistory: true,
           loadDashboardIfNeeded: true,
         });
       } else {
+        // NEU: Flag beim Logout zurücksetzen
+        hasLoadedInitialDashboard = false;
         clearPendingAuthProvider();
         setLoggedOutState();
       }
