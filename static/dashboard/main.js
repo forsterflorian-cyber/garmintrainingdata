@@ -1293,7 +1293,54 @@ async function importReviewAnswer() {
     copyReviewPromptFeedback("Invalid JSON.");
     return;
   }
+async function copyActivitiesReviewPrompt() {
+  const prompt = state.activitiesDashboard?.review?.prompt;
+  if (!prompt) {
+    setGarminStatus("No review prompt available for the selected day.", "error");
+    return;
+  }
 
+  try {
+    await navigator.clipboard.writeText(prompt);
+    setGarminStatus("Activities review prompt copied.", "success");
+  } catch (error) {
+    console.error("copyActivitiesReviewPrompt failed", error);
+    setGarminStatus("Copy failed.", "error");
+  }
+}
+
+async function importActivitiesReviewAnswer() {
+  const raw = window.prompt("Paste ChatGPT JSON review");
+  if (!raw) {
+    return;
+  }
+
+  let review;
+  try {
+    review = JSON.parse(raw);
+  } catch (error) {
+    console.error("importActivitiesReviewAnswer invalid JSON", error);
+    setGarminStatus("Invalid JSON.", "error");
+    return;
+  }
+
+  const reviewPackage = state.activitiesDashboard?.review?.package;
+  if (!reviewPackage) {
+    setGarminStatus("No review package available for the selected day.", "error");
+    return;
+  }
+
+  try {
+    await apiPost("/api/dashboard/reviews", {
+      case: reviewPackage,
+      review,
+    });
+    setGarminStatus("Activities review imported.", "success");
+  } catch (error) {
+    console.error("importActivitiesReviewAnswer failed", error);
+    setGarminStatus(error?.message || "Review import failed.", "error");
+  }
+}
   const reviewPackage = state.planDashboard?.review?.package || state.dashboardData?.review?.package || null;
   if (!reviewPackage) {
     copyReviewPromptFeedback("No review package available.");
@@ -1313,15 +1360,25 @@ async function importReviewAnswer() {
 }
 
 function updateReviewToolState() {
-  const hasReview = Boolean(state.planDashboard?.review?.prompt || state.dashboardData?.review?.prompt);
-  const copyBtn = el("copyReviewPromptBtn");
-  const importBtn = el("importReviewAnswerBtn");
+  const hasPlanReview = Boolean(state.dashboardData?.review?.prompt);
+  const hasActivitiesReview = Boolean(state.activitiesDashboard?.review?.prompt);
+
+  const copyBtn = document.getElementById("copyReviewPromptBtn");
+  const importBtn = document.getElementById("importReviewAnswerBtn");
+  const activitiesCopyBtn = document.getElementById("activitiesCopyReviewPromptBtn");
+  const activitiesImportBtn = document.getElementById("activitiesImportReviewAnswerBtn");
 
   if (copyBtn) {
-    copyBtn.disabled = !hasReview;
+    copyBtn.disabled = !hasPlanReview;
   }
   if (importBtn) {
-    importBtn.disabled = !hasReview;
+    importBtn.disabled = !hasPlanReview;
+  }
+  if (activitiesCopyBtn) {
+    activitiesCopyBtn.disabled = !hasActivitiesReview;
+  }
+  if (activitiesImportBtn) {
+    activitiesImportBtn.disabled = !hasActivitiesReview;
   }
 }
 
@@ -1860,7 +1917,13 @@ function bindEvents() {
       void logout();
     });
   });
+  document
+    .getElementById("activitiesCopyReviewPromptBtn")
+    ?.addEventListener("click", copyActivitiesReviewPrompt);
 
+  document
+    .getElementById("activitiesImportReviewAnswerBtn")
+    ?.addEventListener("click", importActivitiesReviewAnswer);
   const globalLogoutBtn = el("globalLogoutBtn");
   if (globalLogoutBtn) {
     globalLogoutBtn.addEventListener("click", () => {
