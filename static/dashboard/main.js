@@ -1258,6 +1258,73 @@ function renderPrompt(payload) {
   }
 }
 
+
+function copyReviewPromptFeedback(message) {
+  setGarminStatus(message);
+}
+
+async function copyReviewPrompt() {
+  const prompt = state.planDashboard?.review?.prompt || state.dashboardData?.review?.prompt || "";
+  if (!prompt) {
+    copyReviewPromptFeedback("No review prompt available.");
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(prompt);
+    copyReviewPromptFeedback("Review prompt copied.");
+  } catch (error) {
+    console.error("copyReviewPrompt failed", error);
+    copyReviewPromptFeedback("Copy failed.");
+  }
+}
+
+async function importReviewAnswer() {
+  const raw = window.prompt("Paste ChatGPT JSON review");
+  if (!raw) {
+    return;
+  }
+
+  let review;
+  try {
+    review = JSON.parse(raw);
+  } catch (error) {
+    console.error("importReviewAnswer invalid JSON", error);
+    copyReviewPromptFeedback("Invalid JSON.");
+    return;
+  }
+
+  const reviewPackage = state.planDashboard?.review?.package || state.dashboardData?.review?.package || null;
+  if (!reviewPackage) {
+    copyReviewPromptFeedback("No review package available.");
+    return;
+  }
+
+  try {
+    await apiPost("/api/dashboard/reviews", {
+      case: reviewPackage,
+      review,
+    });
+    copyReviewPromptFeedback("Review imported.");
+  } catch (error) {
+    console.error("importReviewAnswer failed", error);
+    copyReviewPromptFeedback(error?.message || "Review import failed.");
+  }
+}
+
+function updateReviewToolState() {
+  const hasReview = Boolean(state.planDashboard?.review?.prompt || state.dashboardData?.review?.prompt);
+  const copyBtn = el("copyReviewPromptBtn");
+  const importBtn = el("importReviewAnswerBtn");
+
+  if (copyBtn) {
+    copyBtn.disabled = !hasReview;
+  }
+  if (importBtn) {
+    importBtn.disabled = !hasReview;
+  }
+}
+
 function renderPlanSurface(payload) {
   if (!payload || !payload.history?.rows?.length) {
     state.currentForecast = null;
@@ -1306,6 +1373,7 @@ function renderActivitiesSurface(payload, availableDays) {
 
 function renderDashboard() {
   const planPayload = state.planDashboard;
+  updateReviewToolState();
   renderSyncUi(planPayload?.sync || state.syncStatus);
   renderPlanSurface(planPayload);
   renderAnalysisSurface(planPayload || {});
@@ -1870,6 +1938,20 @@ function bindEvents() {
       state.mode = event.target.value;
       syncTrainingFocusHelp(state.mode);
       void loadDashboard({ skipAutoSync: true });
+    });
+  }
+
+  const copyReviewPromptBtn = el("copyReviewPromptBtn");
+  if (copyReviewPromptBtn) {
+    copyReviewPromptBtn.addEventListener("click", () => {
+      void copyReviewPrompt();
+    });
+  }
+
+  const importReviewAnswerBtn = el("importReviewAnswerBtn");
+  if (importReviewAnswerBtn) {
+    importReviewAnswerBtn.addEventListener("click", () => {
+      void importReviewAnswer();
     });
   }
 
