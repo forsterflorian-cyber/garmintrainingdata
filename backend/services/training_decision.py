@@ -165,9 +165,11 @@ def compute_load_tolerance_layer(*, load: Dict[str, Any]) -> Dict[str, Any]:
     elif ratio <= 1.1:
         score += 0.10
         trace.append("ratio normal: +0.10")
-    elif ratio <= 1.3:
-        score -= 0.15
-        trace.append("ratio elevated: -0.15")
+    elif ratio <= 1.2:
+        trace.append("ratio upper-normal: +0.00")
+    elif ratio <= 1.35:
+        score -= 0.10
+        trace.append("ratio elevated: -0.10")
     else:
         score -= 0.40
         trace.append("ratio high: -0.40")
