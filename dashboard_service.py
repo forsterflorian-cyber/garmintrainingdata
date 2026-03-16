@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from backend.services.baseline_service import (
@@ -18,6 +18,93 @@ from training_config import TRAINING_CONFIG
 
 VALID_MODES = {"hybrid", "run", "bike", "strength"}
 
+def build_review_package(*, focus_item: Dict[str, Any], mode: str) -> Dict[str, Any]:
+    today = focus_item.get("today") or {}
+    baseline = focus_item.get("baseline") or {}
+    comparisons = focus_item.get("comparisons") or {}
+    load = focus_item.get("load") or {}
+    decision = focus_item.get("decision") or {}
+    activities = focus_item.get("activities") or []
+
+    return {
+        "schemaVersion": 1,
+        "date": focus_item.get("date"),
+        "recommendationDay": focus_item.get("recommendationDay"),
+        "mode": mode,
+        "today": {
+            "readiness": today.get("readiness"),
+            "hrv": today.get("hrv"),
+            "restingHr": today.get("restingHr"),
+            "sleepHours": today.get("sleepHours"),
+            "respiration": today.get("respiration"),
+        },
+        "baseline": {
+            "hrv": baseline.get("hrv"),
+            "restingHr": baseline.get("restingHr"),
+            "sleepHours": baseline.get("sleepHours"),
+            "respiration": baseline.get("respiration"),
+        },
+        "comparisons": {
+            "hrvDeltaPct": comparisons.get("hrvDeltaPct"),
+            "restingHrDeltaBpm": comparisons.get("restingHrDeltaBpm"),
+            "sleepDeltaHours": comparisons.get("sleepDeltaHours"),
+            "respirationDeltaBrpm": comparisons.get("respirationDeltaBrpm"),
+        },
+        "load": {
+            "loadDay": load.get("loadDay"),
+            "acute7d": load.get("acute7d"),
+            "chronic28d": load.get("chronic28d"),
+            "ratio7to28": load.get("ratio7to28"),
+            "hardSessionsLast3d": load.get("hardSessionsLast3d"),
+            "hardSessionsLast7d": load.get("hardSessionsLast7d"),
+            "veryHighYesterdayLoad": load.get("veryHighYesterdayLoad"),
+            "yesterdaySessionType": load.get("yesterdaySessionType"),
+        },
+        "activities": [
+            {
+                "name": activity.get("name"),
+                "type_key": activity.get("type_key"),
+                "duration_min": activity.get("duration_min"),
+                "training_load": activity.get("training_load"),
+                "sessionType": activity.get("sessionType"),
+                "sport_tag": activity.get("sport_tag"),
+            }
+            for activity in activities
+        ],
+        "ruleModel": {
+            "primaryRecommendation": decision.get("primaryRecommendation"),
+            "recoveryStatus": decision.get("recoveryStatus"),
+            "recoveryScore": decision.get("recoveryScore"),
+            "loadTolerance": decision.get("loadTolerance"),
+            "loadToleranceScore": decision.get("loadToleranceScore"),
+            "intensityPermission": decision.get("intensityPermission"),
+            "strengthGuidance": decision.get("strengthGuidance"),
+            "confidence": decision.get("confidence"),
+            "why": decision.get("why") or [],
+            "avoid": decision.get("avoid") or [],
+            "bestOptions": decision.get("bestOptions") or [],
+            "debug": (decision.get("debug") or {}).get("selectedRulePath") or [],
+        },
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def build_review_prompt(review_package: Dict[str, Any]) -> str:
+    return (
+        "Review this training decision package and respond ONLY as valid JSON.\n\n"
+        "Required JSON schema:\n"
+        "{\n"
+        '  "reviewSource": "chatgpt-manual",\n'
+        '  "judgement": "correct|too_conservative|too_aggressive|insufficient_data",\n'
+        '  "recommendedSession": "recovery|easy|moderate|threshold|vo2|strength_light|strength_hypertrophy|rest",\n'
+        '  "agreementWithRuleModel": true,\n'
+        '  "suspectedProblemArea": "recovery_thresholds|load_tolerance|intensity_gate|strength_handling|none|unknown",\n'
+        '  "confidence": "low|medium|high",\n'
+        '  "reasoning": ["short reason 1", "short reason 2"],\n'
+        '  "tuningHint": "one short sentence"\n'
+        "}\n\n"
+        f"CASE:\n{review_package}"
+    )
 
 def mode_or_default(value: Optional[str]) -> str:
     return value if value in VALID_MODES else "hybrid"
@@ -218,12 +305,17 @@ def build_dashboard_payload(
                 "legacyUnits": {},
                 "aiPrompt": None,
             },
+            "review": {
+                "package": None,
+                "prompt": None,
+            },
         }
 
     focus_item = select_focus_item(day_items, selected_date)
     filtered_items = filter_period_items(day_items, focus_item["date"], period_days)
     summary = build_summary(filtered_items)
-
+    review_package = build_review_package(focus_item=focus_item, mode=mode)
+    review_prompt = build_review_prompt(review_package)
     payload = {
         "date": focus_item["date"],
         "mode": mode,
@@ -302,6 +394,10 @@ def build_dashboard_payload(
             "legacyRecommendations": focus_item["legacyRecommendations"],
             "legacyUnits": focus_item["legacyUnits"],
             "aiPrompt": focus_item["aiPrompt"],
+        },
+        "review": {
+            "package": review_package,
+            "prompt": review_prompt,
         },
     }
     if include_debug:
