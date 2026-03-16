@@ -2096,7 +2096,10 @@ if (supabaseClient) {
     }, 0);
   });
 }
-
+window.state = state;
+window.apiPost = apiPost;
+window.renderDashboard = renderDashboard;
+window.setGarminStatus = setGarminStatus;
 async function bootstrapApplication() {
   state.activeView = resolveSurfaceView(requestedViewFromHash());
   bindEvents();
