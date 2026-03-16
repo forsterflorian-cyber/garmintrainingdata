@@ -1979,12 +1979,7 @@ async function restoreSession() {
   }
 }
 let hasLoadedInitialDashboard = false;
-console.log("AUTH EVENT", _event, {
-  hasLoadedInitialDashboard,
-  hasSession: Boolean(session?.access_token),
-  stateHasSession: Boolean(state.currentSession?.access_token),
-  sessionRestorePending: state.sessionRestorePending,
-});
+
 if (supabaseClient) {
   supabaseClient.auth.onAuthStateChange((_event, session) => {
     applyCurrentSession(session || null);
