@@ -30,11 +30,7 @@ import {
   historyRowsFromPayload,
   loadDashboardData,
 } from "./dashboardloader.js";
-import {
-  normalizedPathname,
-  requestedViewFromHash,
-  resolveSurfaceView,
-} from "./viewState.js";
+
 
 const APP_CONFIG = window.__APP_CONFIG__ || {};
 const SURFACE_VIEWS = ["plan", "analysis", "trends", "activities", "sync", "debug"];
@@ -67,12 +63,18 @@ const SUPABASE_AUTH_STORAGE_KEY = "dashboard.supabase.auth";
 const ACCOUNT_DELETE_CONFIRMATION_TEXT = "DELETE";
 
 async function loadDashboard() {
-  return loadDashboardData({
+  const result = await loadDashboardData({
     state,
     apiGet,
     setDashboardLoadingState,
     setGarminStatus,
   });
+
+  state.syncStatus = result?.planDashboard?.sync || state.syncStatus || null;
+  renderDashboard();
+  maybeAutoSync();
+
+  return result;
 }
 
 

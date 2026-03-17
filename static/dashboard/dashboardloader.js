@@ -1,8 +1,8 @@
 export function historyRowsFromPayload(payload) {
-  if (!payload || !Array.isArray(payload.history)) {
+  if (!payload || !Array.isArray(payload.history?.rows)) {
     return [];
   }
-  return payload.history;
+  return payload.history.rows;
 }
 
 function buildDashboardUrl({ mode, rangeDays, selectedDate }) {
@@ -40,10 +40,20 @@ export async function loadDashboardData({
     });
 
     state.planDashboard = planPayload;
-    state.todayDate = planPayload?.date || planPayload?.detail?.activeDate || null;
+    state.todayDate =
+      planPayload?.date ||
+      planPayload?.detail?.activeDate ||
+      null;
+
+    const historyRows = historyRowsFromPayload(planPayload);
+    const availableDates = historyRows
+      .map((row) => (typeof row?.date === "string" && row.date ? row.date : null))
+      .filter(Boolean);
 
     const effectiveActivitiesDate =
-      selectedActivitiesDate ||
+      (selectedActivitiesDate && availableDates.includes(selectedActivitiesDate) && selectedActivitiesDate) ||
+      (state.todayDate && availableDates.includes(state.todayDate) && state.todayDate) ||
+      availableDates[availableDates.length - 1] ||
       state.todayDate ||
       null;
 
@@ -51,6 +61,7 @@ export async function loadDashboardData({
 
     if (
       effectiveActivitiesDate &&
+      state.todayDate &&
       effectiveActivitiesDate !== state.todayDate
     ) {
       state.activitiesDashboard = await fetchDashboardPayload({
