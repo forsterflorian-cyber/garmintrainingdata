@@ -78,7 +78,27 @@ async function loadDashboard() {
     setGarminStatus,
   });
 }
+async function apiGetJson(url) {
+  const response = await fetch(url, {
+    headers: authHeaders(),
+    credentials: "same-origin",
+  });
 
+  if (!response.ok) {
+    let message = `Request failed (${response.status})`;
+    try {
+      const payload = await response.json();
+      if (payload?.error) {
+        message = payload.error;
+      }
+    } catch (_error) {
+      // ignore json parse failure
+    }
+    throw new Error(message);
+  }
+
+  return response.json();
+}
 function loadAdvancedModePreference() {
   try {
     return window.localStorage.getItem(ADVANCED_MODE_KEY) === "true";

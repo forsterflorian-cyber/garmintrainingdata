@@ -1,3 +1,5 @@
+import { getSelectedActivitiesDate, setSelectedActivitiesDate } from "./viewState.js";
+
 export function historyRowsFromPayload(payload) {
   if (!payload || !Array.isArray(payload.history)) {
     return [];
@@ -33,7 +35,7 @@ export async function loadDashboardData({
 }) {
   const mode = state.currentMode;
   const rangeDays = state.currentRangeDays;
-  const selectedActivitiesDate = state.selectedActivitiesDate;
+  const selectedActivitiesDate = getSelectedActivitiesDate(state);
 
   setDashboardLoadingState(true);
 
@@ -53,7 +55,7 @@ export async function loadDashboardData({
       planPayload?.detail?.activeDate ||
       null;
 
-    state.selectedActivitiesDate = effectiveActivitiesDate;
+    const selectedActivitiesDate = getSelectedActivitiesDate(state);
 
     if (
       effectiveActivitiesDate &&
