@@ -5,6 +5,17 @@ export function historyRowsFromPayload(payload) {
   return payload.history.rows;
 }
 
+function dashboardUrlForDate({ mode, rangeDays, date = null }) {
+  const params = new URLSearchParams({
+    days: String(rangeDays),
+    mode,
+  });
+  if (date) {
+    params.set("date", date);
+  }
+  return `/api/dashboard?${params.toString()}`;
+}
+
 function resolveActivitiesDate(currentActivitiesDate, planPayload) {
   const availableDays = historyRowsFromPayload(planPayload)
     .map((row) => (typeof row?.date === "string" && row.date ? row.date : null))
@@ -24,17 +35,6 @@ function resolveActivitiesDate(currentActivitiesDate, planPayload) {
   }
 
   return availableDays[availableDays.length - 1] || todayDate || null;
-}
-
-function dashboardUrlForDate({ mode, rangeDays, date = null }) {
-  const params = new URLSearchParams({
-    days: String(rangeDays),
-    mode,
-  });
-  if (date) {
-    params.set("date", date);
-  }
-  return `/api/dashboard?${params.toString()}`;
 }
 
 export async function loadDashboardData({

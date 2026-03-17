@@ -30,7 +30,12 @@ import {
   historyRowsFromPayload,
   loadDashboardData,
 } from "./dashboardloader.js";
-
+import {
+  normalizedPathname,
+  requestedViewFromHash,
+  resolveSurfaceView,
+  setHashView,
+} from "./viewState.js";
 
 const APP_CONFIG = window.__APP_CONFIG__ || {};
 const SURFACE_VIEWS = ["plan", "analysis", "trends", "activities", "sync", "debug"];
