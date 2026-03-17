@@ -62,21 +62,18 @@ const AUTH_REDIRECT_PROVIDER_KEY = "dashboard.auth.redirectProvider";
 const SUPABASE_AUTH_STORAGE_KEY = "dashboard.supabase.auth";
 const ACCOUNT_DELETE_CONFIRMATION_TEXT = "DELETE";
 
-async function loadDashboard() {
-  const result = await loadDashboardData({
+async function loadDashboard({ skipAutoSync = false } = {}) {
+  return loadDashboardData({
     state,
     apiGet,
     setDashboardLoadingState,
     setGarminStatus,
+    renderDashboard,
+    renderSyncStatusPanel,
+    maybeAutoSync,
+    skipAutoSync,
   });
-
-  state.syncStatus = result?.planDashboard?.sync || state.syncStatus || null;
-  renderDashboard();
-  maybeAutoSync();
-
-  return result;
 }
-
 
 
 function loadAdvancedModePreference() {

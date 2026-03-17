@@ -5,18 +5,36 @@ export function historyRowsFromPayload(payload) {
   return payload.history.rows;
 }
 
-function buildDashboardUrl({ mode, rangeDays, selectedDate }) {
-  const params = new URLSearchParams();
-  if (mode) params.set("mode", mode);
-  if (rangeDays) params.set("days", String(rangeDays));
-  if (selectedDate) params.set("date", selectedDate);
-  const query = params.toString();
-  return `/api/dashboard${query ? `?${query}` : ""}`;
+function resolveActivitiesDate(currentActivitiesDate, planPayload) {
+  const availableDays = historyRowsFromPayload(planPayload)
+    .map((row) => (typeof row?.date === "string" && row.date ? row.date : null))
+    .filter(Boolean);
+
+  const todayDate =
+    planPayload?.date ||
+    planPayload?.detail?.activeDate ||
+    null;
+
+  if (currentActivitiesDate && availableDays.includes(currentActivitiesDate)) {
+    return currentActivitiesDate;
+  }
+
+  if (todayDate && availableDays.includes(todayDate)) {
+    return todayDate;
+  }
+
+  return availableDays[availableDays.length - 1] || todayDate || null;
 }
 
-async function fetchDashboardPayload({ apiGet, mode, rangeDays, selectedDate }) {
-  const url = buildDashboardUrl({ mode, rangeDays, selectedDate });
-  return apiGet(url);
+function dashboardUrlForDate({ mode, rangeDays, date = null }) {
+  const params = new URLSearchParams({
+    days: String(rangeDays),
+    mode,
+  });
+  if (date) {
+    params.set("date", date);
+  }
+  return `/api/dashboard?${params.toString()}`;
 }
 
 export async function loadDashboardData({
@@ -24,54 +42,61 @@ export async function loadDashboardData({
   apiGet,
   setDashboardLoadingState,
   setGarminStatus,
+  renderDashboard,
+  renderSyncStatusPanel,
+  maybeAutoSync,
+  skipAutoSync = false,
 }) {
-  const mode = state.mode;
-  const rangeDays = state.rangeDays;
-  const selectedActivitiesDate = state.activitiesDate;
+  if (!state.currentSession?.access_token || !state.appState?.dashboardAccessible) {
+    return null;
+  }
 
+  const requestId = ++state.dashboardLoadRequestId;
   setDashboardLoadingState(true);
 
   try {
-    const planPayload = await fetchDashboardPayload({
-      apiGet,
-      mode,
-      rangeDays,
-      selectedDate: null,
-    });
+    const planPayload = await apiGet(
+      dashboardUrlForDate({
+        mode: state.mode,
+        rangeDays: state.rangeDays,
+        date: state.todayDate,
+      }),
+    );
+
+    if (requestId !== state.dashboardLoadRequestId) {
+      return null;
+    }
+
+    const resolvedTodayDate = planPayload?.date || state.todayDate || null;
+    const resolvedActivitiesDate = resolveActivitiesDate(state.activitiesDate, planPayload);
+
+    let activitiesPayload = planPayload;
+
+    if (resolvedActivitiesDate && resolvedActivitiesDate !== resolvedTodayDate) {
+      activitiesPayload = await apiGet(
+        dashboardUrlForDate({
+          mode: state.mode,
+          rangeDays: state.rangeDays,
+          date: resolvedActivitiesDate,
+        }),
+      );
+
+      if (requestId !== state.dashboardLoadRequestId) {
+        return null;
+      }
+    }
 
     state.planDashboard = planPayload;
-    state.todayDate =
-      planPayload?.date ||
-      planPayload?.detail?.activeDate ||
-      null;
+    state.activitiesDashboard = activitiesPayload;
+    state.todayDate = resolvedTodayDate;
+    state.activitiesDate = resolvedActivitiesDate || resolvedTodayDate || null;
+    state.syncStatus = planPayload?.sync || null;
 
-    const historyRows = historyRowsFromPayload(planPayload);
-    const availableDates = historyRows
-      .map((row) => (typeof row?.date === "string" && row.date ? row.date : null))
-      .filter(Boolean);
+    renderDashboard();
+    renderSyncStatusPanel(state.syncStatus || {}, "settingsSyncStatusPanel");
 
-    const effectiveActivitiesDate =
-      (selectedActivitiesDate && availableDates.includes(selectedActivitiesDate) && selectedActivitiesDate) ||
-      (state.todayDate && availableDates.includes(state.todayDate) && state.todayDate) ||
-      availableDates[availableDates.length - 1] ||
-      state.todayDate ||
-      null;
-
-    state.activitiesDate = effectiveActivitiesDate;
-
-    if (
-      effectiveActivitiesDate &&
-      state.todayDate &&
-      effectiveActivitiesDate !== state.todayDate
-    ) {
-      state.activitiesDashboard = await fetchDashboardPayload({
-        apiGet,
-        mode,
-        rangeDays,
-        selectedDate: effectiveActivitiesDate,
-      });
-    } else {
-      state.activitiesDashboard = planPayload;
+    if (!skipAutoSync) {
+      maybeAutoSync();
     }
 
     return {
@@ -83,6 +108,8 @@ export async function loadDashboardData({
     setGarminStatus(error?.message || "Dashboard load failed.");
     throw error;
   } finally {
-    setDashboardLoadingState(false);
+    if (requestId === state.dashboardLoadRequestId) {
+      setDashboardLoadingState(false);
+    }
   }
 }
