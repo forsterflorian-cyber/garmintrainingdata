@@ -19,6 +19,13 @@ import { clearPlannedSessionsForUser, getPlannedSession, setPlannedSession } fro
 import { el, formatDateTime, formatNumber, formatRelativeHours, safeHtml, safeText } from "./lib/formatters.js";
 import { computeNextDaysOutlook } from "./lib/outlookForecast.js";
 import { buildForecastContextCopy, compareCompletedSessionToDecision } from "./lib/planDecisionUtils.js";
+import {
+  updateReviewToolState,
+  copyReviewPrompt,
+  importReviewAnswer,
+  copyActivitiesReviewPrompt,
+  importActivitiesReviewAnswer,
+} from "./reviewActions.js";
 
 const APP_CONFIG = window.__APP_CONFIG__ || {};
 const SURFACE_VIEWS = ["plan", "analysis", "trends", "activities", "sync", "debug"];
@@ -1263,118 +1270,9 @@ function copyReviewPromptFeedback(message) {
   setGarminStatus(message);
 }
 
-async function copyReviewPrompt() {
-  const prompt = state.planDashboard?.review?.prompt || state.dashboardData?.review?.prompt || "";
-  if (!prompt) {
-    copyReviewPromptFeedback("No review prompt available.");
-    return;
-  }
 
-  try {
-    await navigator.clipboard.writeText(prompt);
-    copyReviewPromptFeedback("Review prompt copied.");
-  } catch (error) {
-    console.error("copyReviewPrompt failed", error);
-    copyReviewPromptFeedback("Copy failed.");
-  }
-}
 
-async function importReviewAnswer() {
-  const raw = window.prompt("Paste ChatGPT JSON review");
-  if (!raw) {
-    return;
-  }
 
-  let review;
-  try {
-    review = JSON.parse(raw);
-  } catch (error) {
-    console.error("importReviewAnswer invalid JSON", error);
-    copyReviewPromptFeedback("Invalid JSON.");
-    return;
-  }
-
-  const reviewPackage = state.planDashboard?.review?.package || state.dashboardData?.review?.package || null;
-  if (!reviewPackage) {
-    copyReviewPromptFeedback("No review package available.");
-    return;
-  }
-
-  try {
-    await apiPost("/api/dashboard/reviews", {
-      case: reviewPackage,
-      review,
-    });
-    copyReviewPromptFeedback("Review imported.");
-  } catch (error) {
-    console.error("importReviewAnswer failed", error);
-    copyReviewPromptFeedback(error?.message || "Review import failed.");
-  }
-}
-
-function updateReviewToolState() {
-  const planPrompt = state.planDashboard?.review?.prompt;
-  const activitiesPrompt = state.activitiesDashboard?.review?.prompt;
-
-  const copyPlanBtn = el("copyReviewPromptBtn");
-  const importPlanBtn = el("importReviewAnswerBtn");
-  const copyActivitiesBtn = el("activitiesCopyReviewPromptBtn");
-  const importActivitiesBtn = el("activitiesImportReviewAnswerBtn");
-
-  if (copyPlanBtn) copyPlanBtn.disabled = !planPrompt;
-  if (importPlanBtn) importPlanBtn.disabled = !planPrompt;
-  if (copyActivitiesBtn) copyActivitiesBtn.disabled = !activitiesPrompt;
-  if (importActivitiesBtn) importActivitiesBtn.disabled = !activitiesPrompt;
-}
-
-async function copyActivitiesReviewPrompt() {
-  const prompt = state.activitiesDashboard?.review?.prompt;
-  if (!prompt) {
-    setGarminStatus("No review prompt available for the selected day.");
-    return;
-  }
-
-  try {
-    await navigator.clipboard.writeText(prompt);
-    setGarminStatus("Activities review prompt copied.");
-  } catch (error) {
-    console.error("copyActivitiesReviewPrompt failed", error);
-    setGarminStatus("Copy failed.");
-  }
-}
-
-async function importActivitiesReviewAnswer() {
-  const raw = window.prompt("Paste ChatGPT JSON review");
-  if (!raw) {
-    return;
-  }
-
-  let review;
-  try {
-    review = JSON.parse(raw);
-  } catch (error) {
-    console.error("importActivitiesReviewAnswer invalid JSON", error);
-    setGarminStatus("Invalid JSON.");
-    return;
-  }
-
-  const reviewPackage = state.activitiesDashboard?.review?.package;
-  if (!reviewPackage) {
-    setGarminStatus("No review package available for the selected day.");
-    return;
-  }
-
-  try {
-    await apiPost("/api/dashboard/reviews", {
-      case: reviewPackage,
-      review,
-    });
-    setGarminStatus(`Activities review imported for ${reviewPackage.date}.`);
-  } catch (error) {
-    console.error("importActivitiesReviewAnswer failed", error);
-    setGarminStatus(error?.message || "Review import failed.");
-  }
-}
 
 function renderPlanSurface(payload) {
   if (!payload || !payload.history?.rows?.length) {
@@ -1430,7 +1328,7 @@ function renderDashboard() {
   renderTrendsSurface(planPayload || {});
   renderActivitiesSurface(state.activitiesDashboard || planPayload || {}, historyRowsFromPayload(planPayload));
   renderDebug(planPayload || state.activitiesDashboard || {}, state.currentForecast);
-  updateReviewToolState();
+  updateReviewToolState({ state, el });
 }
 async function refreshSyncStatus({ reloadDashboardOnTerminal = false } = {}) {
   if (!state.currentSession?.access_token || state.syncPollInFlight) {
@@ -1990,71 +1888,31 @@ function bindEvents() {
     });
   }
 
-  const copyReviewPromptBtn = el("copyReviewPromptBtn");
+    const copyReviewPromptBtn = el("copyReviewPromptBtn");
   if (copyReviewPromptBtn) {
-    copyReviewPromptBtn.addEventListener("click", async () => {
-      const prompt = state.planDashboard?.review?.prompt;
-      if (!prompt) {
-        setGarminStatus("No review prompt available.");
-        return;
-      }
-      try {
-        await navigator.clipboard.writeText(prompt);
-        setGarminStatus("Review prompt copied.");
-      } catch (error) {
-        console.error("copyReviewPrompt failed", error);
-        setGarminStatus("Copy failed.");
-      }
+    copyReviewPromptBtn.addEventListener("click", () => {
+      void copyReviewPrompt({ state, setGarminStatus });
     });
   }
 
   const importReviewAnswerBtn = el("importReviewAnswerBtn");
   if (importReviewAnswerBtn) {
-    importReviewAnswerBtn.addEventListener("click", async () => {
-      const raw = window.prompt("Paste ChatGPT JSON review");
-      if (!raw) {
-        return;
-      }
-
-      let review;
-      try {
-        review = JSON.parse(raw);
-      } catch (error) {
-        console.error("importReviewAnswer invalid JSON", error);
-        setGarminStatus("Invalid JSON.");
-        return;
-      }
-
-      const reviewPackage = state.planDashboard?.review?.package;
-      if (!reviewPackage) {
-        setGarminStatus("No review package available.");
-        return;
-      }
-
-      try {
-        await apiPost("/api/dashboard/reviews", {
-          case: reviewPackage,
-          review,
-        });
-        setGarminStatus("Review imported.");
-      } catch (error) {
-        console.error("importReviewAnswer failed", error);
-        setGarminStatus(error?.message || "Review import failed.");
-      }
+    importReviewAnswerBtn.addEventListener("click", () => {
+      void importReviewAnswer({ state, apiPost, setGarminStatus });
     });
   }
 
   const activitiesCopyReviewPromptBtn = el("activitiesCopyReviewPromptBtn");
   if (activitiesCopyReviewPromptBtn) {
     activitiesCopyReviewPromptBtn.addEventListener("click", () => {
-      void copyActivitiesReviewPrompt();
+      void copyActivitiesReviewPrompt({ state, setGarminStatus });
     });
   }
 
   const activitiesImportReviewAnswerBtn = el("activitiesImportReviewAnswerBtn");
   if (activitiesImportReviewAnswerBtn) {
     activitiesImportReviewAnswerBtn.addEventListener("click", () => {
-      void importActivitiesReviewAnswer();
+      void importActivitiesReviewAnswer({ state, apiPost, setGarminStatus });
     });
   }
 
