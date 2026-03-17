@@ -22,14 +22,14 @@ function buildDashboardUrl({ mode, rangeDays, selectedDate }) {
   return `/api/dashboard${query ? `?${query}` : ""}`;
 }
 
-async function fetchDashboardPayload({ apiGetJson, mode, rangeDays, selectedDate }) {
+async function fetchDashboardPayload({ apiGet, mode, rangeDays, selectedDate }) {
   const url = buildDashboardUrl({ mode, rangeDays, selectedDate });
-  return apiGetJson(url);
+  return apiGet(url);
 }
 
 export async function loadDashboardData({
   state,
-  apiGetJson,
+  apiGet,
   setDashboardLoadingState,
   setGarminStatus,
 }) {
@@ -41,7 +41,7 @@ export async function loadDashboardData({
 
   try {
     const planPayload = await fetchDashboardPayload({
-      apiGetJson,
+      apiGet,
       mode,
       rangeDays,
       selectedDate: null,
@@ -62,7 +62,7 @@ export async function loadDashboardData({
       effectiveActivitiesDate !== planPayload?.detail?.activeDate
     ) {
       state.activitiesDashboard = await fetchDashboardPayload({
-        apiGetJson,
+        apiGet,
         mode,
         rangeDays,
         selectedDate: effectiveActivitiesDate,
