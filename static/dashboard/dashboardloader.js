@@ -9,15 +9,9 @@ export function historyRowsFromPayload(payload) {
 
 function buildDashboardUrl({ mode, rangeDays, selectedDate }) {
   const params = new URLSearchParams();
-  if (mode) {
-    params.set("mode", mode);
-  }
-  if (rangeDays) {
-    params.set("days", String(rangeDays));
-  }
-  if (selectedDate) {
-    params.set("date", selectedDate);
-  }
+  if (mode) params.set("mode", mode);
+  if (rangeDays) params.set("days", String(rangeDays));
+  if (selectedDate) params.set("date", selectedDate);
   const query = params.toString();
   return `/api/dashboard${query ? `?${query}` : ""}`;
 }
@@ -55,7 +49,7 @@ export async function loadDashboardData({
       planPayload?.detail?.activeDate ||
       null;
 
-    const selectedActivitiesDate = getSelectedActivitiesDate(state);
+    setSelectedActivitiesDate(state, effectiveActivitiesDate);
 
     if (
       effectiveActivitiesDate &&
