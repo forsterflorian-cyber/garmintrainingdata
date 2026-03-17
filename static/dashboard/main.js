@@ -26,6 +26,10 @@ import {
   copyActivitiesReviewPrompt,
   importActivitiesReviewAnswer,
 } from "./reviewActions.js";
+import {
+  historyRowsFromPayload,
+  loadDashboardData,
+} from "./dashboardloader.js";
 
 const APP_CONFIG = window.__APP_CONFIG__ || {};
 const SURFACE_VIEWS = ["plan", "analysis", "trends", "activities", "sync", "debug"];
@@ -56,6 +60,15 @@ const ADVANCED_MODE_KEY = "dashboard.advancedMode";
 const AUTH_REDIRECT_PROVIDER_KEY = "dashboard.auth.redirectProvider";
 const SUPABASE_AUTH_STORAGE_KEY = "dashboard.supabase.auth";
 const ACCOUNT_DELETE_CONFIRMATION_TEXT = "DELETE";
+
+async function loadDashboard() {
+  return loadDashboardData({
+    state,
+    apiGetJson,
+    setDashboardLoadingState,
+    setGarminStatus,
+  });
+}
 
 function loadAdvancedModePreference() {
   try {
@@ -893,10 +906,6 @@ function setActivitiesDay(date) {
   void loadDashboard({ skipAutoSync: true });
 }
 
-function historyRowsFromPayload(payload) {
-  return Array.isArray(payload?.history?.rows) ? payload.history.rows : [];
-}
-
 function historyDates(rows) {
   return rows
     .map((row) => (typeof row?.date === "string" && row.date ? row.date : null))
@@ -1445,69 +1454,6 @@ function maybeAutoSync() {
   void startSyncRequest("/api/sync/auto", null, optimisticState);
 }
 
-async function loadDashboard({ skipAutoSync = false } = {}) {
-  if (!state.currentSession?.access_token || !state.appState?.dashboardAccessible) {
-    return;
-  }
-
-  const requestId = ++state.dashboardLoadRequestId;
-  setDashboardLoadingState(true);
-
-  try {
-    const planPayload = await apiGet(dashboardUrlForDate(state.todayDate));
-    if (requestId !== state.dashboardLoadRequestId) {
-      return;
-    }
-    const resolvedTodayDate = planPayload?.date || state.todayDate;
-    const resolvedActivitiesDate = resolveActivitiesDate(state.activitiesDate, planPayload);
-    let activitiesPayload = planPayload;
-
-    if (resolvedActivitiesDate && resolvedActivitiesDate !== resolvedTodayDate) {
-      activitiesPayload = await apiGet(dashboardUrlForDate(resolvedActivitiesDate));
-      if (requestId !== state.dashboardLoadRequestId) {
-        return;
-      }
-    }
-
-    state.planDashboard = planPayload;
-    state.activitiesDashboard = activitiesPayload;
-    state.todayDate = resolvedTodayDate || null;
-    state.activitiesDate = resolvedActivitiesDate || resolvedTodayDate || null;
-    state.syncStatus = planPayload?.sync || null;
-    renderDashboard();
-    renderSyncStatusPanel(state.syncStatus || {}, "settingsSyncStatusPanel");
-
-    if (planPayload?.sync?.syncState === "blocked") {
-      await refreshAppState({ requestedView: "settings", replaceHistory: true, loadDashboardIfNeeded: false });
-      return;
-    }
-
-    setGarminStatus(syncStatusSummary(planPayload.sync));
-
-    if (isSyncActive(planPayload?.sync?.syncState)) {
-      startSyncPolling();
-    } else {
-      stopSyncPolling();
-    }
-
-    if (!skipAutoSync) {
-      maybeAutoSync();
-    }
-  } catch (error) {
-    if (requestId !== state.dashboardLoadRequestId) {
-      return;
-    }
-    if (isUnauthorizedError(error)) {
-      await handleUnauthorizedSession("Session expired. Sign in again.");
-      return;
-    }
-    setGarminStatus(`Error: ${error.message}`);
-  } finally {
-    if (requestId === state.dashboardLoadRequestId) {
-      setDashboardLoadingState(false);
-    }
-  }
-}
 
 function setLoggedOutState({ authMessage = "Not signed in", garminMessage = "Sign in to connect Garmin." } = {}) {
   state.appState = null;
