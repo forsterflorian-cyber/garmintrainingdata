@@ -1,5 +1,3 @@
-import { getSelectedActivitiesDate, setSelectedActivitiesDate } from "./viewState.js";
-
 export function historyRowsFromPayload(payload) {
   if (!payload || !Array.isArray(payload.history)) {
     return [];
@@ -27,9 +25,9 @@ export async function loadDashboardData({
   setDashboardLoadingState,
   setGarminStatus,
 }) {
-  const mode = state.currentMode;
-  const rangeDays = state.currentRangeDays;
-  const selectedActivitiesDate = getSelectedActivitiesDate(state);
+  const mode = state.mode;
+  const rangeDays = state.rangeDays;
+  const selectedActivitiesDate = state.activitiesDate;
 
   setDashboardLoadingState(true);
 
@@ -42,18 +40,18 @@ export async function loadDashboardData({
     });
 
     state.planDashboard = planPayload;
+    state.todayDate = planPayload?.date || planPayload?.detail?.activeDate || null;
 
     const effectiveActivitiesDate =
       selectedActivitiesDate ||
-      planPayload?.activities?.selectedDate ||
-      planPayload?.detail?.activeDate ||
+      state.todayDate ||
       null;
 
-    setSelectedActivitiesDate(state, effectiveActivitiesDate);
+    state.activitiesDate = effectiveActivitiesDate;
 
     if (
       effectiveActivitiesDate &&
-      effectiveActivitiesDate !== planPayload?.detail?.activeDate
+      effectiveActivitiesDate !== state.todayDate
     ) {
       state.activitiesDashboard = await fetchDashboardPayload({
         apiGet,

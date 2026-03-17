@@ -34,10 +34,6 @@ import {
   normalizedPathname,
   requestedViewFromHash,
   resolveSurfaceView,
-  setHashView,
-  getSelectedActivitiesDate,
-  setSelectedActivitiesDate,
-  clearSelectedActivitiesDate,
 } from "./viewState.js";
 
 const APP_CONFIG = window.__APP_CONFIG__ || {};
