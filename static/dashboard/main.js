@@ -73,7 +73,7 @@ const ACCOUNT_DELETE_CONFIRMATION_TEXT = "DELETE";
 async function loadDashboard() {
   return loadDashboardData({
     state,
-    apiGetJson: apiGet,
+    apiGet,
     setDashboardLoadingState,
     setGarminStatus,
   });
