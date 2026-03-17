@@ -30,6 +30,15 @@ import {
   historyRowsFromPayload,
   loadDashboardData,
 } from "./dashboardloader.js";
+import {
+  normalizedPathname,
+  requestedViewFromHash,
+  resolveSurfaceView,
+  setHashView,
+  getSelectedActivitiesDate,
+  setSelectedActivitiesDate,
+  clearSelectedActivitiesDate,
+} from "./viewState.js";
 
 const APP_CONFIG = window.__APP_CONFIG__ || {};
 const SURFACE_VIEWS = ["plan", "analysis", "trends", "activities", "sync", "debug"];
@@ -186,13 +195,6 @@ function authCallbackUrl() {
   return `${window.location.origin}${APP_ROUTE_PATHS.authCallback}`;
 }
 
-function normalizedPathname(pathname = window.location.pathname) {
-  if (!pathname || pathname === "/") {
-    return "/";
-  }
-  return pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
-}
-
 function isAuthCallbackPath(pathname = window.location.pathname) {
   return normalizedPathname(pathname) === APP_ROUTE_PATHS.authCallback;
 }
@@ -316,21 +318,6 @@ function isUnauthorizedError(error) {
 
 function debugSurfaceAllowed() {
   return Boolean(APP_CONFIG.debugMode || state.advancedMode);
-}
-
-function requestedViewFromHash() {
-  const raw = window.location.hash.replace("#", "").trim().toLowerCase();
-  return SURFACE_VIEWS.includes(raw) ? raw : "plan";
-}
-
-function resolveSurfaceView(view) {
-  if (!SURFACE_VIEWS.includes(view)) {
-    return "plan";
-  }
-  if (view === "debug" && !debugSurfaceAllowed()) {
-    return "plan";
-  }
-  return view;
 }
 
 function persistAdvancedModePreference() {
