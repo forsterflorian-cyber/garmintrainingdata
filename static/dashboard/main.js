@@ -21,8 +21,6 @@ import { computeNextDaysOutlook } from "./lib/outlookForecast.js";
 import { buildForecastContextCopy, compareCompletedSessionToDecision } from "./lib/planDecisionUtils.js";
 import {
   updateReviewToolState,
-  copyReviewPrompt,
-  importReviewAnswer,
   copyActivitiesReviewPrompt,
   importActivitiesReviewAnswer,
 } from "./reviewActions.js";
@@ -1263,15 +1261,6 @@ function renderPrompt(payload) {
   }
 }
 
-
-function copyReviewPromptFeedback(message) {
-  setGarminStatus(message);
-}
-
-
-
-
-
 function renderPlanSurface(payload) {
   if (!payload || !payload.history?.rows?.length) {
     state.currentForecast = null;
@@ -1326,10 +1315,14 @@ function renderDashboard() {
   renderPlanSurface(planPayload);
   renderAnalysisSurface(planPayload || {});
   renderTrendsSurface(planPayload || {});
-  renderActivitiesSurface(state.activitiesDashboard || planPayload || {}, historyRowsFromPayload(planPayload));
+  renderActivitiesSurface(
+    state.activitiesDashboard || planPayload || {},
+    historyRowsFromPayload(planPayload)
+  );
   renderDebug(planPayload || state.activitiesDashboard || {}, state.currentForecast);
   updateReviewToolState({ state, el });
 }
+
 async function refreshSyncStatus({ reloadDashboardOnTerminal = false } = {}) {
   if (!state.currentSession?.access_token || state.syncPollInFlight) {
     return;
@@ -1825,38 +1818,27 @@ function bindEvents() {
     });
   }
 
-    const copyReviewPromptBtn = el("copyReviewPromptBtn");
-  if (copyReviewPromptBtn) {
-    copyReviewPromptBtn.addEventListener("click", () => {
-      void copyReviewPrompt({ state, setGarminStatus });
-    });
-  }
-
-  const importReviewAnswerBtn = el("importReviewAnswerBtn");
-  if (importReviewAnswerBtn) {
-    importReviewAnswerBtn.addEventListener("click", () => {
-      void importReviewAnswer({ state, apiPost, setGarminStatus, reloadDashboard: loadDashboard,});
-    });
-  }
-
   const activitiesCopyReviewPromptBtn = el("activitiesCopyReviewPromptBtn");
   if (activitiesCopyReviewPromptBtn) {
     activitiesCopyReviewPromptBtn.addEventListener("click", () => {
-      void copyActivitiesReviewPrompt({ state, setGarminStatus });
+      void copyActivitiesReviewPrompt({
+        state,
+        setGarminStatus,
+      });
     });
   }
 
-const activitiesImportReviewAnswerBtn = el("activitiesImportReviewAnswerBtn");
-if (activitiesImportReviewAnswerBtn) {
-  activitiesImportReviewAnswerBtn.addEventListener("click", () => {
-    void importActivitiesReviewAnswer({
-      state,
-      apiPost,
-      setGarminStatus,
-      reloadDashboard: loadDashboard,
+  const activitiesImportReviewAnswerBtn = el("activitiesImportReviewAnswerBtn");
+  if (activitiesImportReviewAnswerBtn) {
+    activitiesImportReviewAnswerBtn.addEventListener("click", () => {
+      void importActivitiesReviewAnswer({
+        state,
+        apiPost,
+        setGarminStatus,
+        reloadDashboard: loadDashboard,
+      });
     });
-  });
-}
+  }
 
   el("copyPromptBtn").addEventListener("click", async () => {
     try {
