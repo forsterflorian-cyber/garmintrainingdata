@@ -1846,12 +1846,17 @@ function bindEvents() {
     });
   }
 
-  const activitiesImportReviewAnswerBtn = el("activitiesImportReviewAnswerBtn");
-  if (activitiesImportReviewAnswerBtn) {
-    activitiesImportReviewAnswerBtn.addEventListener("click", () => {
-      void importActivitiesReviewAnswer({ state, apiPost, setGarminStatus });
+const activitiesImportReviewAnswerBtn = el("activitiesImportReviewAnswerBtn");
+if (activitiesImportReviewAnswerBtn) {
+  activitiesImportReviewAnswerBtn.addEventListener("click", () => {
+    void importActivitiesReviewAnswer({
+      state,
+      apiPost,
+      setGarminStatus,
+      reloadDashboard: loadDashboard,
     });
-  }
+  });
+}
 
   el("copyPromptBtn").addEventListener("click", async () => {
     try {

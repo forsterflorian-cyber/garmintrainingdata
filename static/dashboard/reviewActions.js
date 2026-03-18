@@ -29,7 +29,7 @@ export async function copyReviewPrompt({ state, setGarminStatus }) {
   }
 }
 
-export async function importActivitiesReviewAnswer({
+export async function importReviewAnswer({
   state,
   apiPost,
   setGarminStatus,
@@ -60,7 +60,11 @@ export async function importActivitiesReviewAnswer({
       case: reviewPackage,
       review,
     });
-    await reloadDashboard({ skipAutoSync: true });
+
+    if (reloadDashboard) {
+      await reloadDashboard({ skipAutoSync: true });
+    }
+
     setGarminStatus(`Review imported for ${reviewPackage.date}.`);
   } catch (error) {
     console.error("importReviewAnswer failed", error);
@@ -84,7 +88,12 @@ export async function copyActivitiesReviewPrompt({ state, setGarminStatus }) {
   }
 }
 
-export async function importActivitiesReviewAnswer({ state, apiPost, setGarminStatus }) {
+export async function importActivitiesReviewAnswer({
+  state,
+  apiPost,
+  setGarminStatus,
+  reloadDashboard,
+}) {
   const raw = window.prompt("Paste ChatGPT JSON review");
   if (!raw) {
     return;
@@ -110,6 +119,11 @@ export async function importActivitiesReviewAnswer({ state, apiPost, setGarminSt
       case: reviewPackage,
       review,
     });
+
+    if (reloadDashboard) {
+      await reloadDashboard({ skipAutoSync: true });
+    }
+
     setGarminStatus(`Activities review imported for ${reviewPackage.date}.`);
   } catch (error) {
     console.error("importActivitiesReviewAnswer failed", error);
