@@ -73,7 +73,36 @@ def _validate_review_payload(payload):
 
     return payload
 
+def _fetch_review_status(user_id: str, review_date: str | None, mode: str) -> Dict[str, Any] | None:
+    if not review_date:
+        return None
 
+    supabase = get_supabase_admin_client()
+    result = (
+        supabase.table("training_case_reviews")
+        .select("review_payload, updated_at")
+        .eq("user_id", user_id)
+        .eq("review_date", review_date)
+        .eq("mode", mode)
+        .limit(1)
+        .execute()
+    )
+
+    rows = result.data or []
+    if not rows:
+        return None
+
+    row = rows[0]
+    review = row.get("review_payload") or {}
+
+    return {
+        "reviewed": True,
+        "judgement": review.get("judgement"),
+        "problemArea": review.get("suspectedProblemArea"),
+        "recommendedSession": review.get("recommendedSession"),
+        "confidence": review.get("confidence"),
+        "updatedAt": row.get("updated_at"),
+    }
 
 def create_dashboard_blueprint(
     *,
@@ -94,15 +123,20 @@ def create_dashboard_blueprint(
             request.user_id,
             limit=TRAINING_CONFIG.windows.dashboard_history_limit,
         )
-        payload = build_dashboard_payload(
-            rows,
-            account_summary(request.user_id),
-            sync_summary=sync_summary(request.user_id) if sync_summary else None,
-            selected_date=selected_date,
-            mode=mode,
-            period_days=period_days,
-            include_debug=debug_mode,
+        review_status = _fetch_review_status(
+            request.user_id,
+            payload.get("date"),
+            mode,
         )
+
+        payload["reviewStatus"] = review_status or {
+            "reviewed": False,
+            "judgement": None,
+            "problemArea": None,
+            "recommendedSession": None,
+            "confidence": None,
+            "updatedAt": None,
+        }
         return jsonify(payload)
 
     @blueprint.post("/api/dashboard/reviews")

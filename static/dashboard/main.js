@@ -1316,6 +1316,8 @@ function renderActivitiesSurface(payload, availableDays) {
     mode: state.mode,
     todayDate: state.todayDate || state.planDashboard?.date || null,
   });
+
+  renderActivitiesReviewStatus(payload || {});
 }
 
 function renderDashboard() {
@@ -2012,6 +2014,34 @@ async function bootstrapApplication() {
   syncSurfaceUi({ syncHash: false });
   syncAppUi({ replaceHistory: false });
   await restoreSession();
+}
+
+function renderActivitiesReviewStatus(payload) {
+  const container = el("activitiesReviewStatusCard");
+  if (!container) {
+    return;
+  }
+
+  const review = payload?.reviewStatus || null;
+  if (!review || !review.reviewed) {
+    container.innerHTML = '<div class="muted-copy">Not reviewed yet.</div>';
+    return;
+  }
+
+  const judgement = safeText(review.judgement);
+  const problemArea = safeText(review.problemArea);
+  const recommendedSession = safeText(review.recommendedSession);
+  const confidence = safeText(review.confidence);
+
+  container.innerHTML = `
+    <div class="review-status-card">
+      <div><strong>Reviewed:</strong> Yes</div>
+      <div><strong>Judgement:</strong> ${safeHtml(judgement)}</div>
+      <div><strong>Problem area:</strong> ${safeHtml(problemArea)}</div>
+      <div><strong>Recommended session:</strong> ${safeHtml(recommendedSession)}</div>
+      <div><strong>Confidence:</strong> ${safeHtml(confidence)}</div>
+    </div>
+  `;
 }
 
 void bootstrapApplication();
