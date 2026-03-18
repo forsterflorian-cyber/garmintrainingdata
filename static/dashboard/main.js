@@ -2011,24 +2011,46 @@ function renderActivitiesReviewStatus(payload) {
 
   const review = payload?.reviewStatus || null;
   if (!review || !review.reviewed) {
-    container.innerHTML = '<div class="muted-copy">Not reviewed yet.</div>';
+    container.innerHTML = `
+      <div class="review-status-card review-status-card--empty">
+        <div class="review-status-title">Review status</div>
+        <div class="review-status-value muted-copy">Not reviewed yet.</div>
+      </div>
+    `;
     return;
   }
 
-  const judgement = safeText(review.judgement);
-  const problemArea = safeText(review.problemArea);
-  const recommendedSession = safeText(review.recommendedSession);
-  const confidence = safeText(review.confidence);
+  const judgement = safeText(review.judgement || "-");
+  const problemArea = safeText(review.problemArea || "-");
+  const recommendedSession = safeText(review.recommendedSession || "-");
+  const confidence = safeText(review.confidence || "-");
 
   container.innerHTML = `
     <div class="review-status-card">
-      <div><strong>Reviewed:</strong> Yes</div>
-      <div><strong>Judgement:</strong> ${safeHtml(judgement)}</div>
-      <div><strong>Problem area:</strong> ${safeHtml(problemArea)}</div>
-      <div><strong>Recommended session:</strong> ${safeHtml(recommendedSession)}</div>
-      <div><strong>Confidence:</strong> ${safeHtml(confidence)}</div>
+      <div class="review-status-title">Review status</div>
+      <div class="review-status-grid">
+        <div class="review-status-row">
+          <span class="review-status-label">Reviewed</span>
+          <span class="review-status-value">Yes</span>
+        </div>
+        <div class="review-status-row">
+          <span class="review-status-label">Judgement</span>
+          <span class="review-status-value">${safeHtml(judgement)}</span>
+        </div>
+        <div class="review-status-row">
+          <span class="review-status-label">Problem area</span>
+          <span class="review-status-value">${safeHtml(problemArea)}</span>
+        </div>
+        <div class="review-status-row">
+          <span class="review-status-label">Recommended</span>
+          <span class="review-status-value">${safeHtml(recommendedSession)}</span>
+        </div>
+        <div class="review-status-row">
+          <span class="review-status-label">Confidence</span>
+          <span class="review-status-value">${safeHtml(confidence)}</span>
+        </div>
+      </div>
     </div>
   `;
 }
-
 void bootstrapApplication();

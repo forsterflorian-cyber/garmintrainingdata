@@ -29,13 +29,48 @@ html, body {
   min-height: 100%;
 }
 .activities-review-status {
-  margin-top: 10px;
-  margin-bottom: 10px;
+  margin-top: 12px;
+  margin-bottom: 12px;
 }
 
 .review-status-card {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.review-status-card--empty {
+  opacity: 0.9;
+}
+
+.review-status-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 10px;
+  opacity: 0.8;
+}
+
+.review-status-grid {
   display: grid;
-  gap: 4px;
+  gap: 6px;
+}
+
+.review-status-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.review-status-label {
+  opacity: 0.7;
+}
+
+.review-status-value {
+  font-weight: 500;
+  text-align: right;
 }
 body {
   margin: 0;
