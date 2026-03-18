@@ -123,6 +123,17 @@ def create_dashboard_blueprint(
             request.user_id,
             limit=TRAINING_CONFIG.windows.dashboard_history_limit,
         )
+
+        payload = build_dashboard_payload(
+            rows,
+            account_summary(request.user_id),
+            sync_summary=sync_summary(request.user_id) if sync_summary else None,
+            selected_date=selected_date,
+            mode=mode,
+            period_days=period_days,
+            include_debug=debug_mode,
+        )
+
         review_status = _fetch_review_status(
             request.user_id,
             payload.get("date"),
@@ -137,7 +148,10 @@ def create_dashboard_blueprint(
             "confidence": None,
             "updatedAt": None,
         }
+
         return jsonify(payload)
+
+
 
     @blueprint.post("/api/dashboard/reviews")
     @require_user
