@@ -1835,7 +1835,7 @@ function bindEvents() {
   const importReviewAnswerBtn = el("importReviewAnswerBtn");
   if (importReviewAnswerBtn) {
     importReviewAnswerBtn.addEventListener("click", () => {
-      void importReviewAnswer({ state, apiPost, setGarminStatus });
+      void importReviewAnswer({ state, apiPost, setGarminStatus, reloadDashboard: loadDashboard,});
     });
   }
 

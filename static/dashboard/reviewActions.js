@@ -29,7 +29,12 @@ export async function copyReviewPrompt({ state, setGarminStatus }) {
   }
 }
 
-export async function importReviewAnswer({ state, apiPost, setGarminStatus }) {
+export async function importActivitiesReviewAnswer({
+  state,
+  apiPost,
+  setGarminStatus,
+  reloadDashboard,
+}) {
   const raw = window.prompt("Paste ChatGPT JSON review");
   if (!raw) {
     return;
@@ -55,6 +60,7 @@ export async function importReviewAnswer({ state, apiPost, setGarminStatus }) {
       case: reviewPackage,
       review,
     });
+    await reloadDashboard({ skipAutoSync: true });
     setGarminStatus(`Review imported for ${reviewPackage.date}.`);
   } catch (error) {
     console.error("importReviewAnswer failed", error);
