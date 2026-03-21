@@ -18,21 +18,46 @@ export function renderAdvancedMetricsCard(activity, userProfile) {
   const hasPowerMetrics = activity.power_metrics && userProfile?.ftp;
   const hasPaceMetrics = activity.pace_metrics && userProfile?.critical_pace;
   const hasHrMetrics = activity.hr_metrics && userProfile?.max_hr;
+  
+  // Basis-Metriken die immer verfügbar sind
+  const hasBasicMetrics = activity.training_load || activity.duration_min || activity.distance_km;
 
-  if (!hasPowerMetrics && !hasPaceMetrics && !hasHrMetrics) {
+  if (!hasPowerMetrics && !hasPaceMetrics && !hasHrMetrics && !hasBasicMetrics) {
     container.innerHTML = `
       <div class="advanced-metrics-card advanced-metrics-card--empty">
-        <div class="advanced-metrics-title">Advanced Metrics</div>
-        <div class="advanced-metrics-value muted-copy">No advanced metrics available.</div>
-        <div class="advanced-metrics-hint">Set up your profile (FTP, Critical Pace, Max HR) to see detailed metrics.</div>
+        <div class="advanced-metrics-title">Activity Metrics</div>
+        <div class="advanced-metrics-value muted-copy">No metrics available for this activity.</div>
       </div>
     `;
     return;
   }
 
   let html = `<div class="advanced-metrics-card">`;
-  html += `<div class="advanced-metrics-title">Advanced Metrics</div>`;
+  html += `<div class="advanced-metrics-title">Activity Metrics</div>`;
   html += `<div class="advanced-metrics-grid">`;
+
+  // Basis-Metriken (immer verfügbar)
+  if (hasBasicMetrics) {
+    html += `
+      <div class="metrics-section">
+        <div class="metrics-section-title">
+          <span class="metrics-icon">📊</span>
+          Activity Summary
+        </div>
+        <div class="metrics-grid">
+          ${activity.duration_min ? renderMetricRow("Duration", `${formatNumber(activity.duration_min, 0)} min`, "Activity Duration") : ""}
+          ${activity.distance_km ? renderMetricRow("Distance", `${formatNumber(activity.distance_km, 1)} km`, "Activity Distance") : ""}
+          ${activity.training_load ? renderMetricRow("Load", formatNumber(activity.training_load, 0), "Training Load") : ""}
+          ${activity.avg_hr ? renderMetricRow("Avg HR", `${formatNumber(activity.avg_hr, 0)} bpm`, "Average Heart Rate") : ""}
+          ${activity.max_hr ? renderMetricRow("Max HR", `${formatNumber(activity.max_hr, 0)} bpm`, "Max Heart Rate") : ""}
+          ${activity.avg_power ? renderMetricRow("Power", `${formatNumber(activity.avg_power, 0)}W`, "Average Power") : ""}
+          ${activity.avg_speed_kmh ? renderMetricRow("Speed", `${formatNumber(activity.avg_speed_kmh, 1)} km/h`, "Average Speed") : ""}
+          ${activity.aerobic_te ? renderMetricRow("Aerobic TE", formatNumber(activity.aerobic_te, 1), "Aerobic Training Effect") : ""}
+          ${activity.anaerobic_te ? renderMetricRow("Anaerobic TE", formatNumber(activity.anaerobic_te, 1), "Anaerobic Training Effect") : ""}
+        </div>
+      </div>
+    `;
+  }
 
   // Power Metrics (Cycling)
   if (hasPowerMetrics) {
