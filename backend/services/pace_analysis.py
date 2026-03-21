@@ -327,7 +327,7 @@ def estimate_critical_pace_from_activities(activities: List[Dict[str, Any]]) -> 
     for activity in activities:
         pace_readings = activity.get("pace_readings", [])
         avg_pace = activity.get("avg_pace")
-        distance_km = activity.get("distance_km", 0)
+        distance_km = activity.get("distance_km") or 0
         pace_min_per_km = activity.get("pace_min_per_km")
         
         # Nur Aktivitäten >= 5km für Pace-Schätzung
