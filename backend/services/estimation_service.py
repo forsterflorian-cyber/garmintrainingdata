@@ -103,15 +103,14 @@ def estimate_user_metrics(activities: List[Dict[str, Any]]) -> Dict[str, Any]:
                 result["critical_pace"] = round(estimated_pace, 2)
                 LOGGER.info(f"Estimated Critical Pace: {result['critical_pace']} min/km from speed {max_speed} km/h")
     
-    # Schätze LTHR basierend auf HR
-    if avg_hrs:
-        # Verwende höchste HR als Basis für LTHR
-        max_hr = max(avg_hrs)
-        if max_hr > 120:
-            # LTHR ≈ 90% von Max HR (nicht 85%)
-            estimated_lthr = int(max_hr * 0.90)
-            if 100 < estimated_lthr < 220:
-                result["lthr"] = estimated_lthr
-                LOGGER.info(f"Estimated LTHR: {result['lthr']} bpm from max HR {max_hr}")
+    # LTHR NICHT aus Aktivitäts-Daten schätzen!
+    # LTHR sollte IMMER aus User-Profil max_hr berechnet werden (85-90% von max_hr)
+    # Dies ist eine kritische Metrik, die nicht aus Durchschnittswerten geschätzt werden sollte
+    #
+    # Grund: Die höchste durchschnittliche HR einer Aktivität ist NICHT die maximale HR des Users!
+    # Beispiel: Eine Recovery-Run mit Avg HR 87 bpm ergibt LTHR = 78 bpm (falsch!)
+    # Korrekt: LTHR = max_hr * 0.85 (aus User-Profil, z.B. 185 * 0.85 = 157 bpm)
+    #
+    # Siehe hr_analysis.py für korrekte LTHR-Berechnung basierend auf User-Profil
     
     return result
