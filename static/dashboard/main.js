@@ -778,7 +778,8 @@ async function activateAppView(view, { replaceHistory = false, loadDashboardIfNe
     await loadDashboard();
   } else if (view === "settings") {
     renderSyncStatusPanel(state.syncStatus || {}, "settingsSyncStatusPanel");
-    await renderUserProfileSection();
+    // Verzögerung um sicherzustellen, dass DOM bereit ist
+    setTimeout(() => renderUserProfileSection(), 100);
   } else if (view !== "dashboard") {
     renderSyncStatusPanel(state.syncStatus || {}, "settingsSyncStatusPanel");
   }
