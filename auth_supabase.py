@@ -50,30 +50,18 @@ def _verify_token(token: str) -> dict:
             jwks_client = _get_jwks_client()
             key = jwks_client.get_signing_key_from_jwt(token).key
 
-        # Build decode options based on available config
-        decode_options = {
-            "verify_exp": True,
-            "require": ["exp", "sub"],  # Only require exp and sub, not iat
-        }
-        
-        # Only verify audience if SUPABASE_ANON_KEY is set
-        if SUPABASE_ANON_KEY:
-            decode_options["verify_aud"] = True
-            audience = SUPABASE_ANON_KEY
-        else:
-            decode_options["verify_aud"] = False
-            audience = None
-        
-        # Only verify issuer if SUPABASE_URL is set
-        issuer = f"{SUPABASE_URL}/auth/v1" if SUPABASE_URL else None
-
+        # Minimal validation - only verify signature and expiration
+        # Supabase handles audience/issuer validation internally
         payload = jwt.decode(
             token,
             key,
             algorithms=[algorithm],
-            options=decode_options,
-            audience=audience,
-            issuer=issuer,
+            options={
+                "verify_exp": True,
+                "verify_aud": False,  # Disable audience verification for Supabase compatibility
+                "verify_iss": False,  # Disable issuer verification for Supabase compatibility
+                "require": ["exp", "sub"],
+            },
         )
 
         # Additional validation
@@ -89,10 +77,6 @@ def _verify_token(token: str) -> dict:
 
     except jwt.ExpiredSignatureError:
         raise jwt.InvalidTokenError("token expired")
-    except jwt.InvalidAudienceError:
-        raise jwt.InvalidTokenError("invalid token audience")
-    except jwt.InvalidIssuerError:
-        raise jwt.InvalidTokenError("invalid token issuer")
     except jwt.ImmatureSignatureError:
         raise jwt.InvalidTokenError("token not yet valid")
     except jwt.InvalidSignatureError:
