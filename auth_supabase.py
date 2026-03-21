@@ -33,7 +33,7 @@ def _extract_bearer_token() -> str | None:
 
 
 def _verify_token(token: str) -> dict:
-    """Verify JWT token with full validation."""
+    """Verify JWT token with validation."""
     try:
         header = jwt.get_unverified_header(token)
         algorithm = header.get("alg")
@@ -50,20 +50,30 @@ def _verify_token(token: str) -> dict:
             jwks_client = _get_jwks_client()
             key = jwks_client.get_signing_key_from_jwt(token).key
 
-        # Enable full validation with audience, expiration, etc.
+        # Build decode options based on available config
+        decode_options = {
+            "verify_exp": True,
+            "require": ["exp", "sub"],  # Only require exp and sub, not iat
+        }
+        
+        # Only verify audience if SUPABASE_ANON_KEY is set
+        if SUPABASE_ANON_KEY:
+            decode_options["verify_aud"] = True
+            audience = SUPABASE_ANON_KEY
+        else:
+            decode_options["verify_aud"] = False
+            audience = None
+        
+        # Only verify issuer if SUPABASE_URL is set
+        issuer = f"{SUPABASE_URL}/auth/v1" if SUPABASE_URL else None
+
         payload = jwt.decode(
             token,
             key,
             algorithms=[algorithm],
-            options={
-                "verify_aud": True,
-                "verify_exp": True,
-                "verify_iat": True,
-                "verify_nbf": True,
-                "require": ["exp", "iat", "sub"],
-            },
-            audience=SUPABASE_ANON_KEY if SUPABASE_ANON_KEY else None,
-            issuer=f"{SUPABASE_URL}/auth/v1" if SUPABASE_URL else None,
+            options=decode_options,
+            audience=audience,
+            issuer=issuer,
         )
 
         # Additional validation
@@ -74,11 +84,6 @@ def _verify_token(token: str) -> dict:
         exp = payload.get("exp")
         if exp and datetime.fromtimestamp(exp, timezone.utc) < datetime.now(timezone.utc):
             raise jwt.InvalidTokenError("token expired")
-
-        # Check issued at time (not in the future)
-        iat = payload.get("iat")
-        if iat and datetime.fromtimestamp(iat, timezone.utc) > datetime.now(timezone.utc):
-            raise jwt.InvalidTokenError("token issued in the future")
 
         return payload
 
