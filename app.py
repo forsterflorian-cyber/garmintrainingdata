@@ -16,6 +16,7 @@ from backend.services.app_flow_service import build_authenticated_app_state
 from backend.services.sync_errors import classify_sync_error
 from backend.services.sync_runner import SyncRunner
 from backend.services.sync_status_service import SyncStatusService
+from backend.validators import InputValidator, GarminCredentialsValidator
 from dashboard_service import (
     build_prompt_from_payload,
     build_series,
@@ -248,26 +249,22 @@ def api_ai_prompt():
 @require_user
 def connect_garmin():
     data = request.get_json(silent=True) or {}
-    email = data.get("email")
-    password = data.get("password")
-
-    if not isinstance(email, str) or not isinstance(password, str):
-        raise ServiceError(
-            "Email and password are required.",
-            status_code=400,
-            category=ErrorCategory.AUTH,
-            event="garmin.connect_missing_fields",
+    
+    # Validate and sanitize credentials using the new validator
+    try:
+        email, password = GarminCredentialsValidator.validate(
+            data.get("email"),
+            data.get("password"),
         )
-
-    email = email.strip()
-    password = password.strip()
-    if not email or not password:
+    except ServiceError:
+        raise
+    except Exception as exc:
         raise ServiceError(
-            "Email and password are required.",
+            "Invalid credentials format.",
             status_code=400,
-            category=ErrorCategory.AUTH,
-            event="garmin.connect_empty_fields",
-        )
+            category=ErrorCategory.VALIDATION,
+            event="garmin.connect_validation_failed",
+        ) from exc
 
     try:
         garmin_connection_service.connect_account(

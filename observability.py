@@ -13,6 +13,9 @@ class ErrorCategory(str, Enum):
     AUTH = "AUTH"
     API = "API"
     DB = "DB"
+    VALIDATION = "VALIDATION"
+    NETWORK = "NETWORK"
+    SYNC = "SYNC"
 
 
 class JsonFormatter(logging.Formatter):
