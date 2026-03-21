@@ -8,5 +8,8 @@
   },
   "devDependencies": {
     "playwright-core": "^1.54.2"
+  },
+  "dependencies": {
+    "next": "^16.2.1"
   }
 }
