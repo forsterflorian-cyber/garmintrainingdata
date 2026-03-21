@@ -210,24 +210,10 @@ def create_user_profile_blueprint(supabase_client: Any) -> Blueprint:
                     "message": "No activities found for estimation."
                 })
             
-            # Schätze Metriken
-            from backend.services.power_analysis import estimate_ftp_from_activities
-            from backend.services.pace_analysis import estimate_critical_pace_from_activities
-            from backend.services.hr_analysis import estimate_lthr_from_activities
+            # Einfache Schätzlogik
+            from backend.services.estimation_service import estimate_user_metrics
             
-            estimated = {}
-            
-            ftp = estimate_ftp_from_activities(activities)
-            if ftp:
-                estimated["ftp"] = ftp
-            
-            critical_pace = estimate_critical_pace_from_activities(activities)
-            if critical_pace:
-                estimated["critical_pace"] = critical_pace
-            
-            lthr = estimate_lthr_from_activities(activities)
-            if lthr:
-                estimated["lthr"] = lthr
+            estimated = estimate_user_metrics(activities)
             
             return jsonify({
                 "estimated": estimated,
