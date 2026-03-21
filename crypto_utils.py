@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import os
 from functools import lru_cache
 from cryptography.fernet import Fernet
