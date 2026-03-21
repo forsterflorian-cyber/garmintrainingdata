@@ -221,7 +221,32 @@ def garmin_onboarding_view():
 def app_state():
     sync_status = _sync_summary(request.user_id)
     account = store.fetch_account(request.user_id)
-    return jsonify(build_authenticated_app_state(account, sync_status))
+    
+    # Load user profile for advanced metrics
+    user_profile = None
+    try:
+        response = (
+            supabase.table("user_profiles")
+            .select("*")
+            .eq("user_id", request.user_id)
+            .limit(1)
+            .execute()
+        )
+        if response.data:
+            user_profile = response.data[0]
+            user_profile.pop("user_id", None)  # Don't expose user_id
+    except Exception as exc:
+        log_exception(
+            LOGGER,
+            category=ErrorCategory.DB,
+            event="user_profile.fetch_failed",
+            message="Failed to fetch user profile for app state.",
+            exc=exc,
+            user_id=request.user_id,
+            level=logging.WARNING,
+        )
+    
+    return jsonify(build_authenticated_app_state(account, sync_status, user_profile))
 
 
 @app.get("/api/history")

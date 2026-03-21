@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
-from observability import ServiceError
+from observability import ErrorCategory, ServiceError, get_logger, log_exception
 
 if TYPE_CHECKING:
     from garmin_session_store import GarminAccount
+
+LOGGER = get_logger(__name__)
 
 
 APP_PHASE_DASHBOARD = "dashboard"
@@ -26,6 +28,7 @@ BLOCKED_SYNC_REASONS_REQUIRING_RECONNECT = {
 def build_authenticated_app_state(
     account: Optional["GarminAccount"],
     sync_status: Optional[Dict[str, Any]],
+    user_profile: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     garmin = evaluate_garmin_setup(account, sync_status)
     phase = APP_PHASE_DASHBOARD
@@ -41,6 +44,7 @@ def build_authenticated_app_state(
         "recommendedRoute": _route_name_for_phase(phase),
         "garmin": garmin,
         "sync": sync_status or {},
+        "userProfile": user_profile,
     }
 
 
