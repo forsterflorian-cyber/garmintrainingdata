@@ -4,3 +4,4 @@ garth
 supabase
 PyJWT
 cryptography
+numpy
