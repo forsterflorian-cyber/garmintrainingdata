@@ -9,6 +9,7 @@ import { setAuthStatus, setGarminStatus } from "./components/layout/DashboardHea
 import { hydrateRangeSelect } from "./components/layout/FocusFilters.js";
 import { setDashboardLoadingState, syncTrainingFocusHelp } from "./components/layout/DashboardUiState.js";
 import { renderBaselineComparisonCard } from "./components/metrics/BaselineComparisonCard.js";
+import { renderAdvancedMetricsCard, renderAdvancedMetricsSummary } from "./components/metrics/AdvancedMetricsCard.js";
 import { renderLoadTrendCard } from "./components/trends/LoadTrendCard.js";
 import { renderReadinessTrendCard } from "./components/trends/ReadinessTrendCard.js";
 import { renderPrimarySyncAction, renderSyncActionButtons } from "./components/sync/SyncActionButtons.js";
@@ -1321,6 +1322,18 @@ function renderDashboard() {
   );
   renderDebug(planPayload || state.activitiesDashboard || {}, state.currentForecast);
   updateReviewToolState({ state, el });
+  
+  // Render erweiterte Metriken für primäre Aktivität
+  const activities = planPayload?.today?.activities || planPayload?.detail?.activities || [];
+  const primaryActivity = primaryActivityForActivities(activities);
+  if (primaryActivity) {
+    // User-Profil laden (falls vorhanden)
+    const userProfile = state.appState?.userProfile || null;
+    renderAdvancedMetricsCard(primaryActivity, userProfile);
+  }
+  
+  // Render erweiterte Metriken Zusammenfassung
+  renderAdvancedMetricsSummary(activities, state.appState?.userProfile || null);
 }
 
 async function refreshSyncStatus({ reloadDashboardOnTerminal = false } = {}) {
