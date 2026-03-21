@@ -314,10 +314,10 @@ def estimate_critical_pace_from_activities(activities: List[Dict[str, Any]]) -> 
     """
     Schätzt Critical Pace basierend auf historischen Aktivitäten.
     
-    Verwendet pace_readings oder avg_pace als Fallback.
+    Verwendet pace_readings, avg_pace, avg_speed_kmh oder training_load als Fallback.
     
     Args:
-        activities: Liste von Aktivitäten mit pace_readings oder avg_pace
+        activities: Liste von Aktivitäten mit Pace-Daten
         
     Returns:
         Geschätzte Critical Pace in min/km oder None
@@ -327,11 +327,14 @@ def estimate_critical_pace_from_activities(activities: List[Dict[str, Any]]) -> 
     for activity in activities:
         pace_readings = activity.get("pace_readings", [])
         avg_pace = activity.get("avg_pace")
+        avg_speed_kmh = activity.get("avg_speed_kmh")
         distance_km = activity.get("distance_km") or 0
+        duration_min = activity.get("duration_min") or 0
         pace_min_per_km = activity.get("pace_min_per_km")
+        training_load = activity.get("training_load")
         
-        # Nur Aktivitäten >= 5km für Pace-Schätzung
-        if distance_km < 5:
+        # Nur Aktivitäten >= 3km oder >= 15 Minuten für Pace-Schätzung
+        if distance_km < 3 and duration_min < 15:
             continue
         
         # Versuche pace_readings zu verwenden
@@ -341,7 +344,7 @@ def estimate_critical_pace_from_activities(activities: List[Dict[str, Any]]) -> 
                 avg_reading_pace = float(np.mean(valid_paces))
                 best_pace = min(best_pace, avg_reading_pace)
         
-        # Fallback: Verwende avg_pace oder pace_min_per_km
+        # Fallback: Verwende pace_min_per_km
         elif pace_min_per_km:
             try:
                 pace_value = float(pace_min_per_km)
@@ -349,11 +352,35 @@ def estimate_critical_pace_from_activities(activities: List[Dict[str, Any]]) -> 
                     best_pace = min(best_pace, pace_value)
             except (ValueError, TypeError):
                 pass
+        
+        # Fallback: Verwende avg_pace
         elif avg_pace:
             try:
                 pace_value = float(avg_pace)
                 if 3.0 <= pace_value <= 8.0:
                     best_pace = min(best_pace, pace_value)
+            except (ValueError, TypeError):
+                pass
+        
+        # Fallback: Verwende avg_speed_kmh
+        elif avg_speed_kmh:
+            try:
+                speed = float(avg_speed_kmh)
+                if speed > 0:
+                    pace_value = 60.0 / speed
+                    if 3.0 <= pace_value <= 8.0:
+                        best_pace = min(best_pace, pace_value)
+            except (ValueError, TypeError):
+                pass
+        
+        # Fallback: Verwende training_load und duration für Pace-Schätzung
+        elif training_load and duration_min >= 15:
+            try:
+                load = float(training_load)
+                # Annahme: ~1 Load pro Minute ≈ ~5-6 min/km Pace
+                estimated_pace = 5.0 + (load / duration_min - 1.0) * 0.5
+                estimated_pace = max(3.0, min(8.0, estimated_pace))
+                best_pace = min(best_pace, estimated_pace)
             except (ValueError, TypeError):
                 pass
     

@@ -256,20 +256,22 @@ def estimate_ftp_from_activities(activities: List[Dict[str, Any]]) -> Optional[f
     """
     Schätzt FTP basierend auf historischen Aktivitäten.
     
-    Verwendet die höchste 20-Minuten-Power oder avg_power als Fallback.
+    Verwendet power_readings, avg_power oder training_load als Fallback.
     
     Args:
-        activities: Liste von Aktivitäten mit power_readings oder avg_power
+        activities: Liste von Aktivitäten mit Power-Daten oder training_load
         
     Returns:
         Geschätzter FTP oder None
     """
     best_20min_power = 0.0
     best_avg_power = 0.0
+    best_load_per_minute = 0.0
     
     for activity in activities:
         power_readings = activity.get("power_readings", [])
         avg_power = activity.get("avg_power")
+        training_load = activity.get("training_load")
         duration_min = activity.get("duration_min", 0)
         
         # Versuche power_readings zu verwenden
@@ -287,6 +289,11 @@ def estimate_ftp_from_activities(activities: List[Dict[str, Any]]) -> Optional[f
         # Fallback: Verwende avg_power für Aktivitäten >= 20 Minuten
         elif avg_power and duration_min >= 20:
             best_avg_power = max(best_avg_power, float(avg_power))
+        
+        # Fallback: Verwende training_load für Aktivitäten >= 20 Minuten
+        elif training_load and duration_min >= 20:
+            load_per_minute = float(training_load) / duration_min
+            best_load_per_minute = max(best_load_per_minute, load_per_minute)
     
     # Bevorzuge power_readings, falls verfügbar
     if best_20min_power > 0:
@@ -295,6 +302,12 @@ def estimate_ftp_from_activities(activities: List[Dict[str, Any]]) -> Optional[f
     # Fallback: avg_power mit konservativerer Schätzung
     if best_avg_power > 0:
         return round(best_avg_power * 0.90, 1)
+    
+    # Fallback: training_load als Proxy (sehr konservativ)
+    if best_load_per_minute > 0:
+        # Annahme: ~1 Load pro Minute ≈ ~50-80 Watt
+        estimated_power = best_load_per_minute * 65
+        return round(estimated_power * 0.85, 1)
     
     return None
 
