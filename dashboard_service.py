@@ -12,6 +12,9 @@ from backend.services.baseline_service import (
 )
 from backend.services.load_service import build_load_snapshot, classify_activity_intensity, classify_day_intensity
 from backend.services.training_decision import compute_training_decision
+from backend.services.power_analysis import PowerAnalyzer, PowerMetrics
+from backend.services.pace_analysis import PaceAnalyzer, PaceMetrics
+from backend.services.hr_analysis import HeartRateAnalyzer, HeartRateMetrics
 from garmin_hybrid_report_v62_supabase_ready import ActivitySummary, build_ai_prompt as report_build_ai_prompt
 from training_config import TRAINING_CONFIG
 
@@ -578,13 +581,15 @@ def _sanitized_activities(value: Any) -> List[Dict[str, Any]]:
     return activities
 
 
-def _sanitized_activity(value: Any) -> Optional[Dict[str, Any]]:
+def _sanitized_activity(value: Any, user_profile: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
     if not isinstance(value, dict):
         return None
 
     type_key = _string_or_default(value.get("type_key"), "unknown")
     name = _string_or_default(value.get("name"), type_key)
     sport_tag = _sport_tag_for_type(type_key)
+    
+    # Basis-Aktivitätsdaten
     activity = {
         "activity_id": _safe_int(value.get("activity_id")),
         "start_local": _string_or_default(value.get("start_local"), ""),
@@ -604,7 +609,129 @@ def _sanitized_activity(value: Any) -> Optional[Dict[str, Any]]:
         "training_load": _safe_number(value.get("training_load")),
         "sport_tag": sport_tag,
     }
+    
+    # Erweiterte Metriken berechnen (wenn User-Profil verfügbar)
+    if user_profile:
+        activity = _enrich_activity_with_metrics(activity, user_profile)
+    
     activity["sessionType"] = classify_activity_intensity(activity)
+    return activity
+
+
+def _enrich_activity_with_metrics(activity: Dict[str, Any], user_profile: Dict[str, Any]) -> Dict[str, Any]:
+    """Erweitert Aktivität mit Power, Pace und HR-Metriken."""
+    
+    duration_seconds = int((activity.get("duration_min") or 0) * 60)
+    weight_kg = user_profile.get("weight_kg")
+    
+    # Power-Analyse (Cycling)
+    if activity.get("avg_power") and user_profile.get("ftp"):
+        try:
+            power_analyzer = PowerAnalyzer(ftp=user_profile["ftp"])
+            
+            # Power-Readings extrahieren (falls verfügbar)
+            power_readings = activity.get("power_readings", [])
+            if not power_readings and activity.get("avg_power"):
+                # Fallback: Durchschnittliche Power als konstanter Wert
+                power_readings = [float(activity["avg_power"])] * max(1, duration_seconds // 60)
+            
+            if power_readings:
+                power_metrics = power_analyzer.analyze_activity(
+                    power_readings=power_readings,
+                    duration_seconds=duration_seconds,
+                    weight_kg=weight_kg,
+                )
+                activity["power_metrics"] = {
+                    "ftp": power_metrics.ftp,
+                    "intensity_factor": power_metrics.intensity_factor,
+                    "tss": power_metrics.tss,
+                    "variability_index": power_metrics.variability_index,
+                    "power_to_weight": power_metrics.power_to_weight,
+                    "zone_distribution": power_metrics.zone_distribution,
+                }
+        except Exception:
+            # Power-Analyse fehlgeschlagen - ignorieren
+            pass
+    
+    # Pace-Analyse (Running)
+    if sport_tag == "run" and activity.get("pace_min_per_km"):
+        try:
+            critical_pace = user_profile.get("critical_pace", 5.0)
+            pace_analyzer = PaceAnalyzer(critical_pace=critical_pace)
+            
+            # Pace-Readings extrahieren (falls verfügbar)
+            pace_readings = activity.get("pace_readings", [])
+            if not pace_readings and activity.get("pace_min_per_km"):
+                # Fallback: Durchschnittliche Pace als konstanter Wert
+                pace_readings = [float(activity["pace_min_per_km"])] * max(1, int(activity.get("distance_km", 1)))
+            
+            if pace_readings:
+                pace_metrics = pace_analyzer.analyze_activity(
+                    pace_readings=pace_readings,
+                    duration_minutes=int(activity.get("duration_min", 0)),
+                    distance_km=float(activity.get("distance_km", 0)),
+                    avg_hr=int(activity["avg_hr"]) if activity.get("avg_hr") else None,
+                    max_hr=int(activity["max_hr"]) if activity.get("max_hr") else None,
+                    resting_hr=user_profile.get("resting_hr", 60),
+                    is_female=user_profile.get("gender") == "female",
+                )
+                activity["pace_metrics"] = {
+                    "critical_pace": pace_metrics.critical_pace,
+                    "avg_pace": pace_metrics.avg_pace,
+                    "best_pace": pace_metrics.best_pace,
+                    "pace_variability": pace_metrics.pace_variability,
+                    "trimp": pace_metrics.trimp,
+                    "zone_distribution": pace_metrics.zone_distribution,
+                    "splits": pace_metrics.splits,
+                }
+        except Exception:
+            # Pace-Analyse fehlgeschlagen - ignorieren
+            pass
+    
+    # HR-Analyse (alle Sportarten)
+    if activity.get("avg_hr") and user_profile.get("max_hr"):
+        try:
+            hr_analyzer = HeartRateAnalyzer(
+                max_hr=int(user_profile["max_hr"]),
+                resting_hr=int(user_profile.get("resting_hr", 60)),
+                lthr=user_profile.get("lthr"),
+            )
+            
+            # HR-Readings extrahieren (falls verfügbar)
+            hr_readings = activity.get("hr_readings", [])
+            if not hr_readings and activity.get("avg_hr"):
+                # Fallback: Durchschnittliche HR als konstanter Wert
+                hr_readings = [int(activity["avg_hr"])] * max(1, duration_seconds // 60)
+            
+            if hr_readings:
+                hr_metrics = hr_analyzer.analyze_activity(
+                    hr_readings=hr_readings,
+                    duration_minutes=int(activity.get("duration_min", 0)),
+                    peak_hr=int(activity["max_hr"]) if activity.get("max_hr") else None,
+                    recovery_hr=activity.get("recovery_hr"),
+                    avg_power=float(activity["avg_power"]) if activity.get("avg_power") else None,
+                    pace_readings=activity.get("pace_readings"),
+                    is_female=user_profile.get("gender") == "female",
+                    use_lthr=user_profile.get("lthr") is not None,
+                )
+                activity["hr_metrics"] = {
+                    "max_hr": hr_metrics.max_hr,
+                    "resting_hr": hr_metrics.resting_hr,
+                    "hr_reserve": hr_metrics.hr_reserve,
+                    "avg_hr": hr_metrics.avg_hr,
+                    "peak_hr": hr_metrics.peak_hr,
+                    "lthr": hr_metrics.lthr,
+                    "hrr_1min": hr_metrics.hrr_1min,
+                    "hr_training_load": hr_metrics.hr_training_load,
+                    "zone_distribution": hr_metrics.zone_distribution,
+                    "time_in_zones": hr_metrics.time_in_zones,
+                    "efficiency_factor": hr_metrics.efficiency_factor,
+                    "decoupling": hr_metrics.decoupling,
+                }
+        except Exception:
+            # HR-Analyse fehlgeschlagen - ignorieren
+            pass
+    
     return activity
 
 

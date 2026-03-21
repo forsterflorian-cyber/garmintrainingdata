@@ -11,6 +11,7 @@ from backend.routes.dashboard import create_dashboard_blueprint
 from backend.routes.settings import create_settings_blueprint
 from backend.services.garmin_connection_service import GarminConnectionService
 from backend.routes.sync import create_sync_blueprint
+from backend.routes.user_profile import create_user_profile_blueprint
 from backend.services.account_service import AccountService
 from backend.services.app_flow_service import build_authenticated_app_state
 from backend.services.sync_errors import classify_sync_error
@@ -134,6 +135,7 @@ app.register_blueprint(
 )
 app.register_blueprint(create_sync_blueprint(sync_runner=sync_runner, debug_mode=DEBUG_MODE))
 app.register_blueprint(create_settings_blueprint(account_service=account_service))
+app.register_blueprint(create_user_profile_blueprint(supabase_client=supabase))
 
 
 def _mark_sync_error(user_id: str, message: str) -> None:
