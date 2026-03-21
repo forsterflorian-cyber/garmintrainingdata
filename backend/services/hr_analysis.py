@@ -400,10 +400,10 @@ def estimate_lthr_from_activities(activities: List[Dict[str, Any]]) -> Optional[
     """
     Schätzt LTHR basierend auf historischen Aktivitäten.
     
-    Verwendet die durchschnittliche HR der Schwellenaktivitäten.
+    Verwendet hr_readings oder avg_hr als Fallback.
     
     Args:
-        activities: Liste von Aktivitäten mit hr_readings
+        activities: Liste von Aktivitäten mit hr_readings oder avg_hr
         
     Returns:
         Geschätztes LTHR oder None
@@ -412,21 +412,28 @@ def estimate_lthr_from_activities(activities: List[Dict[str, Any]]) -> Optional[
     
     for activity in activities:
         hr_readings = activity.get("hr_readings", [])
+        avg_hr = activity.get("avg_hr")
         duration_min = activity.get("duration_min", 0)
         
         # Aktivitäten 20-60 Minuten für LTHR-Schätzung
-        if not hr_readings or not (20 <= duration_min <= 60):
+        if not (20 <= duration_min <= 60):
             continue
         
-        valid_hrs = [hr for hr in hr_readings if hr > 0]
-        if not valid_hrs:
-            continue
+        # Versuche hr_readings zu verwenden
+        if hr_readings:
+            valid_hrs = [hr for hr in hr_readings if 150 <= hr <= 190]
+            if valid_hrs:
+                avg_reading_hr = int(np.mean(valid_hrs))
+                threshold_hrs.append(avg_reading_hr)
         
-        avg_hr = int(np.mean(valid_hrs))
-        
-        # Nur HRs im Bereich 150-190 für LTHR
-        if 150 <= avg_hr <= 190:
-            threshold_hrs.append(avg_hr)
+        # Fallback: Verwende avg_hr
+        elif avg_hr:
+            try:
+                hr_value = int(avg_hr)
+                if 150 <= hr_value <= 190:
+                    threshold_hrs.append(hr_value)
+            except (ValueError, TypeError):
+                pass
     
     if threshold_hrs:
         # Durchschnitt der Schwellenwerte

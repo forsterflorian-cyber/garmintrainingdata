@@ -314,10 +314,10 @@ def estimate_critical_pace_from_activities(activities: List[Dict[str, Any]]) -> 
     """
     Schätzt Critical Pace basierend auf historischen Aktivitäten.
     
-    Verwendet die schnellste Durchschnitts-Pace einer 10km+ Aktivität.
+    Verwendet pace_readings oder avg_pace als Fallback.
     
     Args:
-        activities: Liste von Aktivitäten mit pace_readings
+        activities: Liste von Aktivitäten mit pace_readings oder avg_pace
         
     Returns:
         Geschätzte Critical Pace in min/km oder None
@@ -326,21 +326,36 @@ def estimate_critical_pace_from_activities(activities: List[Dict[str, Any]]) -> 
     
     for activity in activities:
         pace_readings = activity.get("pace_readings", [])
+        avg_pace = activity.get("avg_pace")
         distance_km = activity.get("distance_km", 0)
+        pace_min_per_km = activity.get("pace_min_per_km")
         
-        # Nur Aktivitäten >= 10km für Pace-Schätzung
-        if not pace_readings or distance_km < 10:
+        # Nur Aktivitäten >= 5km für Pace-Schätzung
+        if distance_km < 5:
             continue
         
-        valid_paces = [p for p in pace_readings if p > 0]
-        if not valid_paces:
-            continue
+        # Versuche pace_readings zu verwenden
+        if pace_readings:
+            valid_paces = [p for p in pace_readings if 3.0 <= p <= 8.0]
+            if valid_paces:
+                avg_reading_pace = float(np.mean(valid_paces))
+                best_pace = min(best_pace, avg_reading_pace)
         
-        avg_pace = float(np.mean(valid_paces))
-        
-        # Nur Pace-Werte die realistisch sind (3-8 min/km)
-        if 3.0 <= avg_pace <= 8.0:
-            best_pace = min(best_pace, avg_pace)
+        # Fallback: Verwende avg_pace oder pace_min_per_km
+        elif pace_min_per_km:
+            try:
+                pace_value = float(pace_min_per_km)
+                if 3.0 <= pace_value <= 8.0:
+                    best_pace = min(best_pace, pace_value)
+            except (ValueError, TypeError):
+                pass
+        elif avg_pace:
+            try:
+                pace_value = float(avg_pace)
+                if 3.0 <= pace_value <= 8.0:
+                    best_pace = min(best_pace, pace_value)
+            except (ValueError, TypeError):
+                pass
     
     if best_pace < float('inf'):
         # Critical Pace ≈ schnellste durchschnittliche Pace

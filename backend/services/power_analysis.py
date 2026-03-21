@@ -256,38 +256,45 @@ def estimate_ftp_from_activities(activities: List[Dict[str, Any]]) -> Optional[f
     """
     Schätzt FTP basierend auf historischen Aktivitäten.
     
-    Verwendet die höchste 20-Minuten-Power und multipliziert mit 0.95.
+    Verwendet die höchste 20-Minuten-Power oder avg_power als Fallback.
     
     Args:
-        activities: Liste von Aktivitäten mit power_readings
+        activities: Liste von Aktivitäten mit power_readings oder avg_power
         
     Returns:
         Geschätzter FTP oder None
     """
     best_20min_power = 0.0
+    best_avg_power = 0.0
     
     for activity in activities:
         power_readings = activity.get("power_readings", [])
-        duration_seconds = activity.get("duration_min", 0) * 60
+        avg_power = activity.get("avg_power")
+        duration_min = activity.get("duration_min", 0)
         
-        if not power_readings or duration_seconds < 1200:
-            continue
+        # Versuche power_readings zu verwenden
+        if power_readings and duration_min >= 20:
+            duration_seconds = duration_min * 60
+            readings_per_second = len(power_readings) / duration_seconds
+            window_size = int(20 * 60 * readings_per_second)
+            
+            if window_size <= len(power_readings):
+                for i in range(len(power_readings) - window_size + 1):
+                    window = power_readings[i:i + window_size]
+                    avg_20min = float(np.mean(window))
+                    best_20min_power = max(best_20min_power, avg_20min)
         
-        # Finde beste 20-Minuten-Schnitt
-        readings_per_second = len(power_readings) / duration_seconds
-        window_size = int(20 * 60 * readings_per_second)  # 20 Minuten
-        
-        if window_size > len(power_readings):
-            continue
-        
-        for i in range(len(power_readings) - window_size + 1):
-            window = power_readings[i:i + window_size]
-            avg_20min = float(np.mean(window))
-            best_20min_power = max(best_20min_power, avg_20min)
+        # Fallback: Verwende avg_power für Aktivitäten >= 20 Minuten
+        elif avg_power and duration_min >= 20:
+            best_avg_power = max(best_avg_power, float(avg_power))
     
+    # Bevorzuge power_readings, falls verfügbar
     if best_20min_power > 0:
-        # FTP ≈ 95% der besten 20-Minuten-Leistung
         return round(best_20min_power * 0.95, 1)
+    
+    # Fallback: avg_power mit konservativerer Schätzung
+    if best_avg_power > 0:
+        return round(best_avg_power * 0.90, 1)
     
     return None
 
