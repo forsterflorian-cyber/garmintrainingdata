@@ -79,38 +79,39 @@ def estimate_user_metrics(activities: List[Dict[str, Any]]) -> Dict[str, Any]:
     
     result = {}
     
+    # Debug-Ausgabe
+    LOGGER.info(f"Estimation: {len(training_loads)} loads, {len(durations)} durations, {len(avg_speeds)} speeds, {len(avg_hrs)} HRs")
+    
     # Schätze FTP basierend auf Training Load
-    if training_loads and durations:
-        # Finde höchste Load pro Minute
-        max_load_per_minute = 0
-        for i, load in enumerate(training_loads):
-            if i < len(durations):
-                load_per_minute = load / durations[i]
-                max_load_per_minute = max(max_load_per_minute, load_per_minute)
-        
-        if max_load_per_minute > 0:
-            # Annahme: ~1 Load/Minute ≈ ~65 Watt
-            estimated_ftp = max_load_per_minute * 65 * 0.9
+    if training_loads:
+        # Verwende höchsten Training Load als Basis
+        max_load = max(training_loads)
+        if max_load > 0:
+            # Annahme: ~1 Load ≈ ~0.8 Watt (konservativ)
+            estimated_ftp = max_load * 0.8
             if 50 < estimated_ftp < 2000:
                 result["ftp"] = round(estimated_ftp, 1)
+                LOGGER.info(f"Estimated FTP: {result['ftp']}W from max load {max_load}")
     
     # Schätze Critical Pace basierend auf Speed
     if avg_speeds:
         max_speed = max(avg_speeds)
-        if max_speed > 0:
+        if max_speed > 5:  # Mindestens 5 km/h
             # Pace = 60 / Speed
             estimated_pace = 60.0 / max_speed
             if 2.0 < estimated_pace < 15.0:
                 result["critical_pace"] = round(estimated_pace, 2)
+                LOGGER.info(f"Estimated Critical Pace: {result['critical_pace']} min/km from speed {max_speed} km/h")
     
     # Schätze LTHR basierend auf HR
     if avg_hrs:
-        # Verwende höchste HR als Proxy für LTHR
+        # Verwende höchste HR als Basis für LTHR
         max_hr = max(avg_hrs)
-        if max_hr > 100:
-            # LTHR ≈ 85% von Max HR
-            estimated_lthr = int(max_hr * 0.85)
+        if max_hr > 120:
+            # LTHR ≈ 90% von Max HR (nicht 85%)
+            estimated_lthr = int(max_hr * 0.90)
             if 100 < estimated_lthr < 220:
                 result["lthr"] = estimated_lthr
+                LOGGER.info(f"Estimated LTHR: {result['lthr']} bpm from max HR {max_hr}")
     
     return result
