@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 from backend.services.sync_decision import SyncPolicy, build_sync_status_response, decide_sync_action
 from backend.services.sync_errors import classify_sync_error
 from backend.services.sync_status_service import SyncStatusService, utc_now_iso
+from backend.services.garmin_user_metrics_service import sync_garmin_user_metrics
 from dashboard_service import fetch_training_rows, history_from_rows, upsert_training_payload
 from garmin_hybrid_report_v62_supabase_ready import (
     export_client_session,
@@ -249,6 +250,32 @@ class SyncRunner:
             imported_records += 1
             days_synced += 1
             latest_synced_day = day
+        
+        # Sync user metrics (LTHR, FTP, Training Readiness, etc.) after activities
+        try:
+            metrics_result = sync_garmin_user_metrics(client, self._supabase, user_id)
+            log_event(
+                self._logger,
+                logging.INFO,
+                category=ErrorCategory.API,
+                event="sync.user_metrics_completed",
+                message="User metrics sync completed.",
+                user_id=user_id,
+                lthr_synced=metrics_result.get("lthr_synced"),
+                ftp_synced=metrics_result.get("ftp_synced"),
+            )
+        except Exception as exc:
+            # Don't fail the entire sync if user metrics fail
+            log_exception(
+                self._logger,
+                category=ErrorCategory.API,
+                event="sync.user_metrics_failed",
+                message="User metrics sync failed (non-blocking).",
+                exc=exc,
+                user_id=user_id,
+                level=logging.WARNING,
+            )
+        
         return imported_records, days_synced, latest_synced_day
 
     def _build_authenticated_client(self, user_id: str, retry_count: int = 3):

@@ -294,6 +294,8 @@ def _validate_profile_data(data: Dict[str, Any]) -> Dict[str, Any]:
             if not isinstance(lthr, int) or lthr < 100 or lthr > 250:
                 raise ValueError("LTHR must be between 100 and 250")
             validated["lthr"] = lthr
+            # Mark as manual when user sets it
+            validated["lthr_source"] = "manual"
     
     # Power
     if "ftp" in data:
@@ -302,6 +304,8 @@ def _validate_profile_data(data: Dict[str, Any]) -> Dict[str, Any]:
             if not isinstance(ftp, (int, float)) or ftp < 50 or ftp > 2000:
                 raise ValueError("FTP must be between 50 and 2000 watt")
             validated["ftp"] = float(ftp)
+            # Mark as manual when user sets it
+            validated["ftp_source"] = "manual"
     
     if "critical_power" in data:
         cp = data["critical_power"]

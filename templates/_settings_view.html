@@ -55,6 +55,72 @@
 
   </section>
 
+  <section class="panel user-profile-panel">
+    <div class="panel-head-space">
+      <div>
+        <p class="eyebrow">Performance Metrics</p>
+        <h2>Your Training Thresholds</h2>
+      </div>
+    </div>
+    <p class="muted-copy">
+      These values are used to calculate your training zones. Values synced from Garmin are marked with a badge.
+    </p>
+    <div id="userProfileMetrics" class="profile-metrics-grid">
+      <div class="metric-card">
+        <div class="metric-header">
+          <span class="metric-label">LTHR</span>
+          <span id="lthrSource" class="metric-source"></span>
+        </div>
+        <div class="metric-value" id="lthrValue">-</div>
+        <div class="metric-unit">bpm</div>
+        <div class="metric-description">Lactate Threshold Heart Rate</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-header">
+          <span class="metric-label">FTP</span>
+          <span id="ftpSource" class="metric-source"></span>
+        </div>
+        <div class="metric-value" id="ftpValue">-</div>
+        <div class="metric-unit">watt</div>
+        <div class="metric-description">Functional Threshold Power</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-header">
+          <span class="metric-label">Max HR</span>
+        </div>
+        <div class="metric-value" id="maxHrValue">-</div>
+        <div class="metric-unit">bpm</div>
+        <div class="metric-description">Maximum Heart Rate</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-header">
+          <span class="metric-label">Resting HR</span>
+        </div>
+        <div class="metric-value" id="restingHrValue">-</div>
+        <div class="metric-unit">bpm</div>
+        <div class="metric-description">Resting Heart Rate</div>
+      </div>
+    </div>
+    <div id="garminTrainingStatus" class="garmin-training-status" hidden>
+      <div class="training-status-header">
+        <span class="eyebrow">Garmin Training Status</span>
+      </div>
+      <div class="training-status-content">
+        <div class="status-item">
+          <span class="status-label">Readiness</span>
+          <span id="trainingReadinessValue" class="status-value">-</span>
+        </div>
+        <div class="status-item">
+          <span class="status-label">Status</span>
+          <span id="trainingStatusValue" class="status-value">-</span>
+        </div>
+      </div>
+    </div>
+    <div class="button-row">
+      <button id="editProfileBtn" class="btn btn-secondary" type="button">Edit Profile</button>
+    </div>
+  </section>
+
   <section class="panel danger-zone-panel">
     <div class="panel-head-space">
       <div>

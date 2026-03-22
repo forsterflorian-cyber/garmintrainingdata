@@ -2145,4 +2145,108 @@ function renderActivitiesReviewStatus(payload) {
     </div>
   `;
 }
+
+function formatSourceLabel(source) {
+  if (!source) return "";
+  const labels = {
+    garmin: "Garmin",
+    manual: "Manual",
+    estimated: "Estimated",
+  };
+  return labels[source] || source;
+}
+
+async function loadUserProfile() {
+  try {
+    const profile = await apiGet("/api/user-profile/");
+    
+    // LTHR
+    const lthrValue = el("lthrValue");
+    const lthrSource = el("lthrSource");
+    if (lthrValue) {
+      lthrValue.textContent = profile?.profile?.lthr ? formatNumber(profile.profile.lthr, 0) : "-";
+    }
+    if (lthrSource) {
+      const source = profile?.profile?.lthr_source;
+      if (source) {
+        lthrSource.textContent = formatSourceLabel(source);
+        lthrSource.dataset.source = source;
+        lthrSource.hidden = false;
+      } else {
+        lthrSource.hidden = true;
+      }
+    }
+
+    // FTP
+    const ftpValue = el("ftpValue");
+    const ftpSource = el("ftpSource");
+    if (ftpValue) {
+      ftpValue.textContent = profile?.profile?.ftp ? formatNumber(profile.profile.ftp, 0) : "-";
+    }
+    if (ftpSource) {
+      const source = profile?.profile?.ftp_source;
+      if (source) {
+        ftpSource.textContent = formatSourceLabel(source);
+        ftpSource.dataset.source = source;
+        ftpSource.hidden = false;
+      } else {
+        ftpSource.hidden = true;
+      }
+    }
+
+    // Max HR
+    const maxHrValue = el("maxHrValue");
+    if (maxHrValue) {
+      maxHrValue.textContent = profile?.profile?.max_hr ? formatNumber(profile.profile.max_hr, 0) : "-";
+    }
+
+    // Resting HR
+    const restingHrValue = el("restingHrValue");
+    if (restingHrValue) {
+      restingHrValue.textContent = profile?.profile?.resting_hr ? formatNumber(profile.profile.resting_hr, 0) : "-";
+    }
+
+    // Garmin Training Status
+    const garminTrainingStatus = el("garminTrainingStatus");
+    const trainingReadinessValue = el("trainingReadinessValue");
+    const trainingStatusValue = el("trainingStatusValue");
+    
+    if (garminTrainingStatus) {
+      const hasGarminData = profile?.profile?.garmin_training_readiness || profile?.profile?.garmin_training_status;
+      garminTrainingStatus.hidden = !hasGarminData;
+      
+      if (trainingReadinessValue) {
+        trainingReadinessValue.textContent = profile?.profile?.garmin_training_readiness 
+          ? `${formatNumber(profile.profile.garmin_training_readiness, 0)}/100`
+          : "-";
+      }
+      
+      if (trainingStatusValue) {
+        const statusMap = {
+          PRODUCTIVE: "Productive",
+          MAINTAINING: "Maintaining",
+          PEAKING: "Peaking",
+          RECOVERY: "Recovery",
+          DETRAINING: "Detraining",
+          OVERREACHING: "Overreaching",
+          NOT_STARTED: "Not Started",
+        };
+        const status = profile?.profile?.garmin_training_status;
+        trainingStatusValue.textContent = status ? (statusMap[status] || labelFromKey(status)) : "-";
+      }
+    }
+  } catch (error) {
+    console.error("Failed to load user profile:", error);
+  }
+}
+
+// Load profile when settings view is activated
+const originalActivateAppView = activateAppView;
+activateAppView = async function(view, options = {}) {
+  await originalActivateAppView(view, options);
+  if (view === "settings") {
+    await loadUserProfile();
+  }
+};
+
 void bootstrapApplication();

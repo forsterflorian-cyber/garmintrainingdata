@@ -2826,3 +2826,126 @@ th {
     transform: translateY(120%);
   }
 }
+
+/* User Profile Metrics */
+.profile-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.metric-card {
+  background: rgba(4, 15, 20, 0.72);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  border: 1px solid rgba(173, 212, 202, 0.08);
+}
+
+.metric-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.metric-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.metric-source {
+  font-size: 0.62rem;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.metric-source[data-source="garmin"] {
+  background: rgba(86, 208, 179, 0.15);
+  color: var(--accent-2);
+}
+
+.metric-source[data-source="manual"] {
+  background: rgba(255, 184, 92, 0.15);
+  color: var(--accent);
+}
+
+.metric-source[data-source="estimated"] {
+  background: rgba(173, 212, 202, 0.1);
+  color: var(--muted);
+}
+
+.metric-value {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1;
+  font-family: "Space Grotesk", sans-serif;
+}
+
+.metric-unit {
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.metric-description {
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-top: 8px;
+  line-height: 1.35;
+}
+
+.garmin-training-status {
+  background: rgba(4, 15, 20, 0.72);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  margin-bottom: 16px;
+  border: 1px solid rgba(173, 212, 202, 0.08);
+}
+
+.training-status-header {
+  margin-bottom: 10px;
+}
+
+.training-status-content {
+  display: flex;
+  gap: 24px;
+}
+
+.status-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.status-label {
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.status-value {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text);
+  font-family: "Space Grotesk", sans-serif;
+}
+
+@media (max-width: 760px) {
+  .profile-metrics-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .training-status-content {
+    flex-direction: column;
+    gap: 12px;
+  }
+}
