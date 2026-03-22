@@ -46,6 +46,7 @@ def compute_training_decision(input_payload: Dict[str, Any]) -> Dict[str, Any]:
         load_tolerance=load_tolerance,
         intensity=intensity,
         strength=strength,
+        mode=mode,
     )
     why = build_why_lines(
         recovery=recovery,
@@ -317,7 +318,7 @@ def pick_primary_recommendation(
     if intensity["value"] == "moderate":
         if mode == "strength" and strength["value"] in {"hypertrophy_ok", "maintenance_ok"} and recovery["status"] in {"Good", "Stable"}:
             return "Strength OK"
-        if strength["value"] == "hypertrophy_ok" and load_tolerance["status"] in {"Reduced", "Normal"}:
+        if mode == "strength" and strength["value"] == "hypertrophy_ok" and load_tolerance["status"] in {"Reduced", "Normal"}:
             return "Strength OK"
         return "Moderate only"
     if recovery["status"] in {"Borderline", "Poor"} or load_tolerance["status"] in {"Reduced", "Low"}:
@@ -347,17 +348,21 @@ def build_best_options(
             option_ids = ["threshold_run", "moderate_endurance", "threshold_ride"]
         elif mode == "bike":
             option_ids = ["threshold_ride", "moderate_endurance", "threshold_run"]
+        elif mode == "strength":
+            option_ids = ["strength_hypertrophy", "strength_maintenance", "moderate_endurance"]
         else:
             option_ids = ["threshold_run", "threshold_ride", "moderate_endurance"]
     elif intensity_permission == "moderate":
         if strength_permission == "hypertrophy_ok" and mode == "strength":
-            option_ids = ["strength_hypertrophy", "moderate_ride", "moderate_run"]
+            option_ids = ["strength_hypertrophy", "strength_maintenance", "moderate_endurance"]
         elif primary_recommendation == "Strength OK":
-            option_ids = ["strength_hypertrophy", "moderate_ride", "moderate_run"]
+            option_ids = ["strength_hypertrophy", "strength_maintenance", "moderate_endurance"]
         elif mode == "run":
             option_ids = ["moderate_run", "strength_maintenance", "moderate_ride"]
         elif mode == "bike":
             option_ids = ["moderate_ride", "strength_maintenance", "moderate_run"]
+        elif mode == "strength":
+            option_ids = ["strength_hypertrophy", "strength_maintenance", "moderate_endurance"]
         else:
             option_ids = ["moderate_ride", "moderate_run", "strength_maintenance"]
     elif recovery_status == "Poor":
@@ -373,6 +378,15 @@ def build_best_options(
             option_ids = ["easy_ride", "easy_run", "strength_light"]
 
     option_ids = prioritize_for_mode(option_ids, mode)
+    # Filter options by mode if a specific mode is selected
+    if mode in {"run", "bike", "strength"}:
+        filtered_options = [
+            option_id for option_id in option_ids
+            if get_session(option_id)["sportTag"] == mode
+        ]
+        # If we have filtered options, use them; otherwise fall back to all options
+        if filtered_options:
+            option_ids = filtered_options
     return [session_to_best_option(get_session(option_id)) for option_id in option_ids[:3]]
 
 
@@ -382,6 +396,7 @@ def build_avoid_list(
     load_tolerance: Dict[str, Any],
     intensity: Dict[str, Any],
     strength: Dict[str, Any],
+    mode: str,
 ) -> List[str]:
     avoid: List[str] = []
 
@@ -395,6 +410,17 @@ def build_avoid_list(
         avoid.append("Heavy lower-body strength")
     if recovery["status"] == "Poor":
         avoid.append("Any session that pushes pace or power")
+
+    # Filter avoid items based on mode
+    if mode == "run":
+        # Remove bike-specific items
+        avoid = [item for item in avoid if "bike" not in item.lower() and "ride" not in item.lower()]
+    elif mode == "bike":
+        # Remove run-specific items
+        avoid = [item for item in avoid if "run" not in item.lower()]
+    elif mode == "strength":
+        # Remove cardio-specific items
+        avoid = [item for item in avoid if "run" not in item.lower() and "bike" not in item.lower() and "ride" not in item.lower()]
 
     deduped: List[str] = []
     for item in avoid:
