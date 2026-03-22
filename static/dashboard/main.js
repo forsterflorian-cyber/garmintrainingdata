@@ -15,6 +15,13 @@ import { renderPrimarySyncAction, renderSyncActionButtons } from "./components/s
 import { renderSyncStatusBadge } from "./components/sync/SyncStatusBadge.js";
 import { getSyncUiCopy, syncReasonLabel } from "./components/sync/syncStatusCopy.js";
 import { renderSyncStatusPanel } from "./components/sync/SyncStatusPanel.js";
+import {
+  showToast,
+  showSuccessToast,
+  showErrorToast,
+  showWarningToast,
+  showInfoToast,
+} from "./components/layout/ToastContainer.js";
 import { clearPlannedSessionsForUser, getPlannedSession, setPlannedSession } from "./lib/forecastUtils.js";
 import { el, formatDateTime, formatNumber, formatRelativeHours, safeHtml, safeText } from "./lib/formatters.js";
 import { computeNextDaysOutlook } from "./lib/outlookForecast.js";
@@ -642,7 +649,7 @@ function getUserFriendlyErrorMessage(error) {
 function showErrorToUser(error, context = "") {
   const friendlyMessage = getUserFriendlyErrorMessage(error);
   const fullMessage = context ? `${context}: ${friendlyMessage}` : friendlyMessage;
-  setGarminStatus(fullMessage);
+  showErrorToast(fullMessage);
   console.error("User-facing error:", error);
 }
 

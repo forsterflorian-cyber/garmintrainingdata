@@ -2695,3 +2695,134 @@ th {
 .dashboard-loading-indicator[role="status"] {
   text-align: center;
 }
+
+/* Toast Notifications */
+.toast-container {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 1000;
+  display: grid;
+  gap: 10px;
+  max-width: 420px;
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line);
+  background: var(--panel-strong);
+  box-shadow: var(--shadow);
+  pointer-events: auto;
+  transform: translateX(120%);
+  opacity: 0;
+  transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+.toast-enter {
+  transform: translateX(0);
+  opacity: 1;
+}
+
+.toast-exit {
+  transform: translateX(120%);
+  opacity: 0;
+}
+
+.toast-icon {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.toast-message {
+  flex: 1 1 auto;
+  font-size: 0.92rem;
+  line-height: 1.4;
+}
+
+.toast-dismiss {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.toast-dismiss:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
+.toast-info .toast-icon {
+  background: rgba(86, 208, 179, 0.15);
+  color: var(--accent-2);
+}
+
+.toast-success .toast-icon {
+  background: rgba(99, 230, 190, 0.15);
+  color: var(--good);
+}
+
+.toast-success {
+  border-color: rgba(99, 230, 190, 0.2);
+}
+
+.toast-warning .toast-icon {
+  background: rgba(255, 209, 102, 0.15);
+  color: var(--warn);
+}
+
+.toast-warning {
+  border-color: rgba(255, 209, 102, 0.2);
+}
+
+.toast-error .toast-icon {
+  background: rgba(255, 126, 114, 0.15);
+  color: var(--danger);
+}
+
+.toast-error {
+  border-color: rgba(255, 126, 114, 0.2);
+}
+
+@media (max-width: 760px) {
+  .toast-container {
+    top: auto;
+    bottom: 20px;
+    right: 16px;
+    left: 16px;
+    max-width: none;
+  }
+
+  .toast {
+    transform: translateY(120%);
+  }
+
+  .toast-enter {
+    transform: translateY(0);
+  }
+
+  .toast-exit {
+    transform: translateY(120%);
+  }
+}
