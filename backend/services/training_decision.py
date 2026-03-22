@@ -387,7 +387,62 @@ def build_best_options(
         # If we have filtered options, use them; otherwise fall back to all options
         if filtered_options:
             option_ids = filtered_options
-    return [session_to_best_option(get_session(option_id)) for option_id in option_ids[:3]]
+    
+    # Generate 3 options with different intensity levels
+    result = []
+    for option_id in option_ids[:3]:
+        session = get_session(option_id)
+        intensity_level = session.get("intensityLevel", "moderate")
+        result.append(session_to_best_option(session, intensity_level))
+    
+    # Ensure we always return 3 options with different intensity levels
+    if len(result) < 3:
+        # Determine which intensity levels we already have
+        existing_levels = {opt.get("intensityLevel") for opt in result}
+        
+        # Define fallback options for each mode with different intensity levels
+        if mode == "bike":
+            fallback_options = [
+                ("easy_ride", "easy"),
+                ("moderate_ride", "moderate"),
+                ("threshold_ride", "threshold"),
+            ]
+        elif mode == "strength":
+            fallback_options = [
+                ("strength_light", "easy"),
+                ("strength_maintenance", "moderate"),
+                ("strength_hypertrophy", "strength"),
+            ]
+        else:  # run or hybrid
+            fallback_options = [
+                ("easy_run", "easy"),
+                ("moderate_run", "moderate"),
+                ("threshold_run", "threshold"),
+            ]
+        
+        # Add fallback options until we have 3 different intensity levels
+        for fallback_id, fallback_level in fallback_options:
+            if len(result) >= 3:
+                break
+            if fallback_level not in existing_levels:
+                fallback_session = get_session(fallback_id)
+                result.append(session_to_best_option(fallback_session, fallback_level))
+                existing_levels.add(fallback_level)
+        
+        # If we still don't have 3 options, add more fallbacks
+        while len(result) < 3:
+            # Add a generic fallback with a different intensity level
+            if mode == "bike":
+                fallback_session = get_session("easy_ride")
+                result.append(session_to_best_option(fallback_session, "easy"))
+            elif mode == "strength":
+                fallback_session = get_session("strength_light")
+                result.append(session_to_best_option(fallback_session, "easy"))
+            else:
+                fallback_session = get_session("easy_run")
+                result.append(session_to_best_option(fallback_session, "easy"))
+    
+    return result
 
 
 def build_avoid_list(
@@ -495,7 +550,17 @@ def build_decision_trace(
     ]
 
 
-def session_to_best_option(session: Dict[str, Any]) -> Dict[str, Any]:
+def session_to_best_option(session: Dict[str, Any], intensity_level: str = "moderate") -> Dict[str, Any]:
+    """Convert session to best option with color coding based on intensity."""
+    color_map = {
+        "easy": "green",
+        "moderate": "yellow",
+        "threshold": "orange",
+        "vo2": "red",
+        "strength": "red",
+    }
+    color = color_map.get(intensity_level, "yellow")
+    
     return {
         "type": session["id"],
         "label": session["label"],
@@ -503,6 +568,8 @@ def session_to_best_option(session: Dict[str, Any]) -> Dict[str, Any]:
         "fatigueCost": session["fatigueCost"],
         "fatigueLevel": session["fatigueLabel"],
         "sportTag": session["sportTag"],
+        "intensityLevel": intensity_level,
+        "color": color,
     }
 
 

@@ -34,6 +34,7 @@ SESSION_CATALOG: Dict[str, List[Dict[str, Any]]] = {
             "details": "30-45 min easy aerobic, conversational only",
             "sportTag": "run",
             "fatigueCost": 0.2,
+            "intensityLevel": "easy",
         },
         {
             "id": "easy_ride",
@@ -41,6 +42,7 @@ SESSION_CATALOG: Dict[str, List[Dict[str, Any]]] = {
             "details": "45-60 min smooth Z1/Z2 ride",
             "sportTag": "bike",
             "fatigueCost": 0.2,
+            "intensityLevel": "easy",
         },
         {
             "id": "strength_light",
@@ -48,6 +50,7 @@ SESSION_CATALOG: Dict[str, List[Dict[str, Any]]] = {
             "details": "20-30 min light accessory or mobility only",
             "sportTag": "strength",
             "fatigueCost": 0.2,
+            "intensityLevel": "easy",
         },
     ],
     "moderate": [
@@ -57,6 +60,7 @@ SESSION_CATALOG: Dict[str, List[Dict[str, Any]]] = {
             "details": "45-70 min controlled aerobic endurance",
             "sportTag": "run",
             "fatigueCost": 0.4,
+            "intensityLevel": "moderate",
         },
         {
             "id": "moderate_ride",
@@ -64,6 +68,7 @@ SESSION_CATALOG: Dict[str, List[Dict[str, Any]]] = {
             "details": "60-90 min Z2 with only low Z3 exposure",
             "sportTag": "bike",
             "fatigueCost": 0.4,
+            "intensityLevel": "moderate",
         },
         {
             "id": "strength_maintenance",
@@ -71,6 +76,7 @@ SESSION_CATALOG: Dict[str, List[Dict[str, Any]]] = {
             "details": "2-3 controlled full-body rounds, no grinding",
             "sportTag": "strength",
             "fatigueCost": 0.3,
+            "intensityLevel": "moderate",
         },
     ],
     "threshold": [
@@ -80,6 +86,7 @@ SESSION_CATALOG: Dict[str, List[Dict[str, Any]]] = {
             "details": "2 x 10-15 min around LT with full control",
             "sportTag": "run",
             "fatigueCost": 0.7,
+            "intensityLevel": "threshold",
         },
         {
             "id": "threshold_ride",
@@ -87,6 +94,7 @@ SESSION_CATALOG: Dict[str, List[Dict[str, Any]]] = {
             "details": "2 x 12 min around FTP",
             "sportTag": "bike",
             "fatigueCost": 0.7,
+            "intensityLevel": "threshold",
         },
         {
             "id": "moderate_endurance",
@@ -94,6 +102,7 @@ SESSION_CATALOG: Dict[str, List[Dict[str, Any]]] = {
             "details": "45-75 min controlled aerobic work",
             "sportTag": "hybrid",
             "fatigueCost": 0.4,
+            "intensityLevel": "moderate",
         },
     ],
     "vo2": [
@@ -103,6 +112,7 @@ SESSION_CATALOG: Dict[str, List[Dict[str, Any]]] = {
             "details": "5 x 3 min @ VO2 pace",
             "sportTag": "run",
             "fatigueCost": 0.9,
+            "intensityLevel": "vo2",
         },
         {
             "id": "vo2_ride",
@@ -110,6 +120,7 @@ SESSION_CATALOG: Dict[str, List[Dict[str, Any]]] = {
             "details": "6 x 2 min @ 120% FTP",
             "sportTag": "bike",
             "fatigueCost": 0.9,
+            "intensityLevel": "vo2",
         },
         {
             "id": "threshold_alternative",
@@ -117,6 +128,7 @@ SESSION_CATALOG: Dict[str, List[Dict[str, Any]]] = {
             "details": "Run 2 x 10 min or Bike 2 x 12 min steady threshold",
             "sportTag": "hybrid",
             "fatigueCost": 0.7,
+            "intensityLevel": "threshold",
         },
     ],
     "strength": [
@@ -126,6 +138,7 @@ SESSION_CATALOG: Dict[str, List[Dict[str, Any]]] = {
             "details": "3-4 main sets, stop 1-2 reps before failure",
             "sportTag": "strength",
             "fatigueCost": 0.6,
+            "intensityLevel": "strength",
         },
         {
             "id": "strength_maintenance",
@@ -133,6 +146,7 @@ SESSION_CATALOG: Dict[str, List[Dict[str, Any]]] = {
             "details": "2-3 rounds, low soreness target",
             "sportTag": "strength",
             "fatigueCost": 0.3,
+            "intensityLevel": "moderate",
         },
     ],
 }

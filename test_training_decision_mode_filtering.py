@@ -54,6 +54,18 @@ class ModeFilteringTests(unittest.TestCase):
                 "run",
                 f"Session '{option['label']}' hat sportTag '{option['sportTag']}' statt 'run'"
             )
+        
+        # Es sollte 3 Optionen geben
+        self.assertEqual(len(decision["bestOptions"]), 3)
+        
+        # Die Optionen sollten unterschiedliche Intensitätsstufen haben
+        intensity_levels = [opt.get("intensityLevel") for opt in decision["bestOptions"]]
+        self.assertEqual(len(set(intensity_levels)), 3, "Die 3 Optionen sollten unterschiedliche Intensitätsstufen haben")
+        
+        # Jede Option sollte eine Farbe haben
+        for option in decision["bestOptions"]:
+            self.assertIn("color", option, "Jede Option sollte eine Farbe haben")
+            self.assertIn(option["color"], ["green", "yellow", "orange", "red"], "Farbe sollte gültig sein")
 
     def test_bike_mode_only_shows_bike_sessions(self):
         """Wenn Modus 'bike' ist, sollten nur Bike-Sessions angezeigt werden."""
