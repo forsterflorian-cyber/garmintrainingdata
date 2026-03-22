@@ -12,6 +12,7 @@ from observability import ErrorCategory, get_logger, log_event, log_exception
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
 SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET")
+SUPABASE_PROJECT_REF = os.getenv("SUPABASE_PROJECT_REF", "")
 SUPPORTED_JWT_ALGORITHMS = {"HS256", "RS256", "ES256"}
 LOGGER = get_logger(__name__)
 
@@ -50,18 +51,23 @@ def _verify_token(token: str) -> dict:
             jwks_client = _get_jwks_client()
             key = jwks_client.get_signing_key_from_jwt(token).key
 
-        # Minimal validation - only verify signature and expiration
-        # Supabase handles audience/issuer validation internally
+        # Supabase specific JWT configuration
+        expected_audience = "authenticated"
+        expected_issuer = f"https://{SUPABASE_PROJECT_REF}.supabase.co/auth/v1" if SUPABASE_PROJECT_REF else None
+
+        # Decode and verify JWT with proper validation
         payload = jwt.decode(
             token,
             key,
             algorithms=[algorithm],
             options={
                 "verify_exp": True,
-                "verify_aud": False,  # Disable audience verification for Supabase compatibility
-                "verify_iss": False,  # Disable issuer verification for Supabase compatibility
-                "require": ["exp", "sub"],
+                "verify_aud": bool(expected_audience),  # Enable audience verification
+                "verify_iss": bool(expected_issuer),  # Enable issuer verification when project ref is available
+                "require": ["exp", "sub", "aud"],
             },
+            audience=expected_audience,
+            issuer=expected_issuer,
         )
 
         # Additional validation

@@ -603,33 +603,150 @@ async function getToken() {
   return token;
 }
 
-async function apiGet(url) {
-  const token = await getToken();
-  const response = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  const json = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw buildApiError(response, json);
-  }
-  return json;
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function apiPost(url, body = null) {
-  const token = await getToken();
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: body ? JSON.stringify(body) : null,
-  });
-  const json = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw buildApiError(response, json);
+function isTransientError(error) {
+  if (error.message?.includes("Failed to fetch")) return true;
+  if (error.message?.includes("NetworkError")) return true;
+  if (error.status >= 500 && error.status < 600) return true;
+  return false;
+}
+
+function getUserFriendlyErrorMessage(error) {
+  const message = error.message || "Unknown error";
+
+  if (message.includes("timed out")) {
+    return "The request took too long. Please check your connection and try again.";
   }
-  return json;
+  if (message.includes("Failed to fetch") || message.includes("NetworkError")) {
+    return "Unable to connect to the server. Please check your internet connection.";
+  }
+  if (message.includes("401") || message.includes("Unauthorized")) {
+    return "Your session has expired. Please sign in again.";
+  }
+  if (message.includes("403") || message.includes("Forbidden")) {
+    return "You do not have permission to perform this action.";
+  }
+  if (message.includes("404") || message.includes("Not Found")) {
+    return "The requested resource was not found.";
+  }
+  if (message.includes("500") || message.includes("Internal Server Error")) {
+    return "Something went wrong on our end. Please try again later.";
+  }
+
+  return message;
+}
+
+function showErrorToUser(error, context = "") {
+  const friendlyMessage = getUserFriendlyErrorMessage(error);
+  const fullMessage = context ? `${context}: ${friendlyMessage}` : friendlyMessage;
+  setGarminStatus(fullMessage);
+  console.error("User-facing error:", error);
+}
+
+async function apiGet(url, options = {}) {
+  const token = await getToken();
+  const { timeout = 30000, retries = 0 } = options;
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    let json;
+    const contentType = response.headers.get("content-type");
+    if (contentType && contentType.includes("application/json")) {
+      try {
+        json = await response.json();
+      } catch (parseError) {
+        throw new Error(`Invalid JSON response from ${url}: ${parseError.message}`);
+      }
+    } else {
+      const text = await response.text();
+      throw new Error(`Expected JSON response but got: ${text.substring(0, 100)}`);
+    }
+
+    if (!response.ok) {
+      throw buildApiError(response, json);
+    }
+
+    return json;
+  } catch (error) {
+    clearTimeout(timeoutId);
+
+    if (error.name === "AbortError") {
+      throw new Error(`Request to ${url} timed out after ${timeout}ms`);
+    }
+
+    if (retries > 0 && isTransientError(error)) {
+      await sleep(1000);
+      return apiGet(url, { ...options, retries: retries - 1 });
+    }
+
+    throw error;
+  }
+}
+
+async function apiPost(url, body = null, options = {}) {
+  const token = await getToken();
+  const { timeout = 30000, retries = 0 } = options;
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: body ? JSON.stringify(body) : null,
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    let json;
+    const contentType = response.headers.get("content-type");
+    if (contentType && contentType.includes("application/json")) {
+      try {
+        json = await response.json();
+      } catch (parseError) {
+        throw new Error(`Invalid JSON response from ${url}: ${parseError.message}`);
+      }
+    } else {
+      const text = await response.text();
+      throw new Error(`Expected JSON response but got: ${text.substring(0, 100)}`);
+    }
+
+    if (!response.ok) {
+      throw buildApiError(response, json);
+    }
+
+    return json;
+  } catch (error) {
+    clearTimeout(timeoutId);
+
+    if (error.name === "AbortError") {
+      throw new Error(`Request to ${url} timed out after ${timeout}ms`);
+    }
+
+    if (retries > 0 && isTransientError(error)) {
+      await sleep(1000);
+      return apiPost(url, body, { ...options, retries: retries - 1 });
+    }
+
+    throw error;
+  }
 }
 
 function authProvider(providerId) {
@@ -978,41 +1095,6 @@ function actualSessionTitle(activity, sessionType) {
     return String(activity.name).trim();
   }
   return labelFromKey(activity?.type_key) || sessionCategoryLabel(sessionType);
-}
-
-function legacyResolveActualSessionForPlanDate(payload) {
-  const activities = payload?.today?.activities || payload?.detail?.activities || [];
-  if (!activities.length) {
-    return null;
-  }
-
-  const sessionType = payload?.today?.sessionType || payload?.detail?.sessionType || "easy";
-  const primaryActivity = primaryActivityForActivities(activities);
-  const totalDuration = activities.reduce((sum, activity) => sum + (safeNumeric(activity?.duration_min) || 0), 0);
-  const avgHr = weightedAverage(activities, "avg_hr", "duration_min") ?? safeNumeric(primaryActivity?.avg_hr);
-  const totalLoad = activities.reduce((sum, activity) => sum + (safeNumeric(activity?.training_load) || 0), 0);
-  const aerobicTe = activities.reduce((sum, activity) => sum + (safeNumeric(activity?.aerobic_te) || 0), 0);
-  const anaerobicTe = activities.reduce((sum, activity) => sum + (safeNumeric(activity?.anaerobic_te) || 0), 0);
-  const title = activities.length === 1
-    ? actualSessionTitle(primaryActivity, sessionType)
-    : `${activities.length} activities completed`;
-  const summary = [
-    sessionCategoryLabel(sessionType),
-    totalDuration > 0 ? `${formatNumber(totalDuration, 0)} min` : null,
-    avgHr !== null ? `Avg HR ${formatNumber(avgHr, 0)}` : null,
-  ].filter(Boolean).join(" · ");
-  const chips = [
-    totalLoad > 0 ? `Load ${formatNumber(totalLoad, 0)}` : null,
-    aerobicTe > 0 || anaerobicTe > 0 ? `TE ${formatNumber(aerobicTe, 1)} / ${formatNumber(anaerobicTe, 1)}` : null,
-  ].filter(Boolean);
-
-  return {
-    type: sessionType,
-    label: summary || title,
-    title,
-    summary,
-    chips,
-  };
 }
 
 function resolveActualSessionForPlanDate(payload) {
@@ -1950,33 +2032,36 @@ let hasLoadedInitialDashboard = false;
 if (supabaseClient) {
   supabaseClient.auth.onAuthStateChange((_event, session) => {
     applyCurrentSession(session || null);
-    // Supabase feuert diese Events bei Tab-Fokus. Wir überspringen sie,
-    // um den Dashboard-Reload und das Overlay zu verhindern.
+    
+    // Explizite Behandlung verschiedener Events
     if (_event === "TOKEN_REFRESHED" || _event === "USER_UPDATED") {
       return;
     }
 
-    // Verhindert, dass ein redundantes SIGNED_IN bei Tab-Fokus den Reload triggert.
+    // SIGNED_OUT setzt Flag zurück
+    if (_event === "SIGNED_OUT") {
+      hasLoadedInitialDashboard = false;
+      clearPendingAuthProvider();
+      setLoggedOutState();
+      return;
+    }
+
+    // Verhindert redundanten Reload bei Tab-Fokus
     if (_event === "SIGNED_IN" && hasLoadedInitialDashboard) {
       return;
     }
+    
     window.setTimeout(async () => {
       if (state.sessionRestorePending) {
         return;
       }
       if (state.currentSession?.access_token) {
-        // NEU: Flag auf true setzen, da der initiale Load nun stattfindet
         hasLoadedInitialDashboard = true;
         await refreshAppState({
           requestedView: requestedAppViewFromPath(),
           replaceHistory: true,
           loadDashboardIfNeeded: true,
         });
-      } else {
-        // NEU: Flag beim Logout zurücksetzen
-        hasLoadedInitialDashboard = false;
-        clearPendingAuthProvider();
-        setLoggedOutState();
       }
     }, 0);
   });

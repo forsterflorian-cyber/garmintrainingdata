@@ -251,7 +251,10 @@ class SyncRunner:
             latest_synced_day = day
         return imported_records, days_synced, latest_synced_day
 
-    def _build_authenticated_client(self, user_id: str):
+    def _build_authenticated_client(self, user_id: str, retry_count: int = 3):
+        """Build authenticated client with retry logic for session conflicts."""
+        import time
+        
         account = self._store.fetch_account(user_id)
         if not account:
             raise ServiceError("Garmin account missing", status_code=400, category=ErrorCategory.AUTH)
@@ -265,24 +268,50 @@ class SyncRunner:
         client = load_client(email=email, password=password, session_data=session_payload)
 
         refreshed_session = export_client_session(client)
-        if refreshed_session:
+        if not refreshed_session:
+            return client, account
+
+        # Retry-Logik für Session-Speicherung
+        for attempt in range(retry_count):
             try:
+                # Immer die aktuelle Version laden
+                current_account = self._store.fetch_account(user_id)
+                expected_version = current_account.garmin_session_version if current_account else None
+                
                 self._store.save_session_atomically(
                     user_id,
                     refreshed_session,
-                    expected_version=account.garmin_session_version,
+                    expected_version=expected_version,
                 )
+                break  # Erfolg
             except ServiceError as exc:
-                if exc.status_code != 409:
-                    raise
-                log_event(
-                    self._logger,
-                    logging.WARNING,
-                    category=ErrorCategory.DB,
-                    event="sync.session_refresh_conflict",
-                    message="Garmin session refresh conflicted with a parallel request.",
-                    user_id=user_id,
-                )
+                if exc.status_code == 409:  # Conflict
+                    if attempt < retry_count - 1:
+                        # Kurz warten und erneut versuchen
+                        time.sleep(0.1 * (attempt + 1))
+                        log_event(
+                            self._logger,
+                            logging.WARNING,
+                            category=ErrorCategory.DB,
+                            event="sync.session_refresh_retry",
+                            message=f"Session refresh conflict, retry {attempt + 1}/{retry_count}",
+                            user_id=user_id,
+                        )
+                        continue
+                    else:
+                        # Letzter Versuch fehlgeschlagen
+                        log_event(
+                            self._logger,
+                            logging.ERROR,
+                            category=ErrorCategory.DB,
+                            event="sync.session_refresh_failed",
+                            message="Session refresh failed after all retries",
+                            user_id=user_id,
+                        )
+                        # Trotzdem Client zurückgeben (Session ist funktional)
+                else:
+                    raise  # Anderen Fehler weiterwerfen
+
         return client, account
 
     def _handle_sync_failure(
