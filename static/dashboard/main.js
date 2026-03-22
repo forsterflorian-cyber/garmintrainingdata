@@ -903,7 +903,7 @@ async function activateAppView(view, { replaceHistory = false, loadDashboardIfNe
   }
 }
 
-async function refreshAppState({ requestedView = requestedAppViewFromPath(), replaceHistory = false, loadDashboardIfNeeded = true } = {}) {
+async function refreshAppState({ requestedView = requestedAppViewFromPath(), replaceHistory = false, loadDashboardIfNeeded = false } = {}) {
   if (!state.currentSession?.access_token) {
     setLoggedOutState();
     return;
