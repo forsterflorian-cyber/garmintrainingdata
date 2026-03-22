@@ -63,7 +63,7 @@ export function computeNextDaysOutlook({
       loadTolerance: context.loadTolerance,
       intensity: intensityOverride ? applyIntensityTrace(context.intensity, intensityOverride) : context.intensity,
     });
-    const defaultSession = chooseRepresentativeSession(decision, mode);
+    const defaultSession = chooseRepresentativeSession(decision, mode, dayIndex);
     const recommendation = outlookRecommendationForDecision(decision, defaultSession?.category);
     const label = forecastDayLabel(initialState.anchorDate, dayIndex + 1);
     const row = {
@@ -174,30 +174,37 @@ function resolveSessionProfile(selectedSession) {
   return forecastProfileForSessionType(selectedSession.type) || forecastProfileForSessionType(selectedSession.id);
 }
 
-function chooseRepresentativeSession(decision, mode = "hybrid") {
+function chooseRepresentativeSession(decision, mode = "hybrid", dayIndex = 0) {
   const bestOptions = decision?.bestOptions || [];
   
-  // Filtere Optionen nach Modus
+  // Bei Hybrid: Wähle basierend auf Tag-Index eine Sportart (run/bike/strength)
+  if (mode === "hybrid") {
+    const sportTags = ["run", "bike", "strength"];
+    const selectedSport = sportTags[dayIndex % 3];
+    
+    const sportOptions = bestOptions.filter((option) => {
+      if (!option?.type) return false;
+      const session = getSession(option.type);
+      if (!session) return false;
+      return session.sportTag === selectedSport || session.sportTag === "hybrid";
+    });
+    
+    if (sportOptions.length > 0) {
+      return resolveSessionProfile(sportOptions[0].type);
+    }
+  }
+  
+  // Bei spezifischem Modus: Nur Sessions der bevorzugten Sportart
   const modeFilteredOptions = bestOptions.filter((option) => {
     if (!option?.type) return false;
     const session = getSession(option.type);
     if (!session) return false;
-    
-    // Bei "hybrid" alle Optionen erlauben
-    if (mode === "hybrid") return true;
-    
-    // Bei spezifischem Modus nur passende Sportarten
     return session.sportTag === mode || session.sportTag === "hybrid";
   });
 
-  // Verwende gefilterte Optionen oder Fallback auf alle
-  const optionsToUse = modeFilteredOptions.length > 0 ? modeFilteredOptions : bestOptions;
-  
-  if (optionsToUse.length > 0) {
-    // Wähle zufällig aus den passenden Optionen für mehr Vielfalt
-    const randomIndex = Math.floor(Math.random() * Math.min(optionsToUse.length, 3));
-    const selectedOption = optionsToUse[randomIndex];
-    return resolveSessionProfile(selectedOption.type);
+  if (modeFilteredOptions.length > 0) {
+    // Nehme die erste passende Option
+    return resolveSessionProfile(modeFilteredOptions[0].type);
   }
 
   const fallbackCategory = categoryFromPrimaryRecommendation(decision?.primaryRecommendation, decision?.intensityPermission);
