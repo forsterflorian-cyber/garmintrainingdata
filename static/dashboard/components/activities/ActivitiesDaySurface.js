@@ -306,7 +306,6 @@ function syncDayNavigationButtons(previousButton, nextButton, previousDate = nul
 }
 
 function renderActivityCard(activity, comparison) {
-  const chips = buildActivityChips(activity);
   return `
     <article class="activity-card">
       <div class="relative-head">
@@ -318,9 +317,6 @@ function renderActivityCard(activity, comparison) {
           ${comparisonBadge(comparison)}
           <div class="relative-value">${activityDurationText(activity)}</div>
         </div>
-      </div>
-      <div class="activity-chips">
-        ${chips.length ? chips.map((chip) => `<span class="chip">${safeHtml(chip)}</span>`).join("") : '<span class="chip">Partial Garmin metadata</span>'}
       </div>
       ${comparison?.detail ? `<p class="muted-copy activity-comparison-detail">${safeHtml(comparison.detail)}</p>` : ""}
     </article>
@@ -380,31 +376,8 @@ function metricSummaryText(summary, digits = 0, suffix = "") {
   return suffix ? `${rendered} ${suffix}` : rendered;
 }
 
-function buildActivityChips(activity) {
-  const chips = [];
-  pushActivityChip(chips, "Avg HR", activity?.avg_hr, 0);
-  pushActivityChip(chips, "Max HR", activity?.max_hr, 0);
-  const aerobicTe = safeNumericValue(activity?.aerobic_te);
-  const anaerobicTe = safeNumericValue(activity?.anaerobic_te);
-  if (aerobicTe !== null || anaerobicTe !== null) {
-    chips.push(`TE ${formatNumber(aerobicTe, 1)} / ${formatNumber(anaerobicTe, 1)}`);
-  }
-  pushActivityChip(chips, "Load", activity?.training_load, 1);
-  if (typeof activity?.pace_min_per_km === "string" && activity.pace_min_per_km.trim()) {
-    chips.push(`Pace ${activity.pace_min_per_km.trim()} /km`);
-  } else {
-    pushActivityChip(chips, "Distance", activity?.distance_km, 1, "km");
-  }
-  return chips;
-}
-
-function pushActivityChip(chips, label, value, digits = 0, suffix = "") {
-  const numericValue = safeNumericValue(value);
-  if (numericValue === null) {
-    return;
-  }
-  const rendered = suffix ? `${formatNumber(numericValue, digits)} ${suffix}` : formatNumber(numericValue, digits);
-  chips.push(`${label} ${rendered}`);
+function buildActivityChips(_activity) {
+  return [];
 }
 
 function activityTitle(activity) {

@@ -11,7 +11,7 @@ from backend.routes.dashboard import create_dashboard_blueprint
 from backend.routes.settings import create_settings_blueprint
 from backend.services.garmin_connection_service import GarminConnectionService
 from backend.routes.sync import create_sync_blueprint
-from backend.routes.user_profile import create_user_profile_blueprint
+# from backend.routes.user_profile import create_user_profile_blueprint  # DISABLED - User profiles removed from dashboard
 from backend.services.account_service import AccountService
 from backend.services.app_flow_service import build_authenticated_app_state
 from backend.services.sync_errors import classify_sync_error
@@ -135,7 +135,7 @@ app.register_blueprint(
 )
 app.register_blueprint(create_sync_blueprint(sync_runner=sync_runner, debug_mode=DEBUG_MODE))
 app.register_blueprint(create_settings_blueprint(account_service=account_service))
-app.register_blueprint(create_user_profile_blueprint(supabase_client=supabase))
+# app.register_blueprint(create_user_profile_blueprint(supabase_client=supabase))  # DISABLED - User profiles removed from dashboard
 
 
 def _mark_sync_error(user_id: str, message: str) -> None:
@@ -222,29 +222,8 @@ def app_state():
     sync_status = _sync_summary(request.user_id)
     account = store.fetch_account(request.user_id)
     
-    # Load user profile for advanced metrics
+    # User profiles disabled - pass None
     user_profile = None
-    try:
-        response = (
-            supabase.table("user_profiles")
-            .select("*")
-            .eq("user_id", request.user_id)
-            .limit(1)
-            .execute()
-        )
-        if response.data:
-            user_profile = response.data[0]
-            user_profile.pop("user_id", None)  # Don't expose user_id
-    except Exception as exc:
-        log_exception(
-            LOGGER,
-            category=ErrorCategory.DB,
-            event="user_profile.fetch_failed",
-            message="Failed to fetch user profile for app state.",
-            exc=exc,
-            user_id=request.user_id,
-            level=logging.WARNING,
-        )
     
     return jsonify(build_authenticated_app_state(account, sync_status, user_profile))
 

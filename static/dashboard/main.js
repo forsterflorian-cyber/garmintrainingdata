@@ -9,8 +9,6 @@ import { setAuthStatus, setGarminStatus } from "./components/layout/DashboardHea
 import { hydrateRangeSelect } from "./components/layout/FocusFilters.js";
 import { setDashboardLoadingState, syncTrainingFocusHelp } from "./components/layout/DashboardUiState.js";
 import { renderBaselineComparisonCard } from "./components/metrics/BaselineComparisonCard.js";
-import { renderAdvancedMetricsCard, renderAdvancedMetricsSummary } from "./components/metrics/AdvancedMetricsCard.js";
-import { renderUserProfileForm, showEstimationResults, showProfileFeedback } from "./components/settings/UserProfileForm.js";
 import { renderLoadTrendCard } from "./components/trends/LoadTrendCard.js";
 import { renderReadinessTrendCard } from "./components/trends/ReadinessTrendCard.js";
 import { renderPrimarySyncAction, renderSyncActionButtons } from "./components/sync/SyncActionButtons.js";
@@ -776,10 +774,6 @@ async function activateAppView(view, { replaceHistory = false, loadDashboardIfNe
 
   if (view === "dashboard" && loadDashboardIfNeeded) {
     await loadDashboard();
-  } else if (view === "settings") {
-    renderSyncStatusPanel(state.syncStatus || {}, "settingsSyncStatusPanel");
-    // Verzögerung um sicherzustellen, dass DOM bereit ist
-    setTimeout(() => renderUserProfileSection(), 100);
   } else if (view !== "dashboard") {
     renderSyncStatusPanel(state.syncStatus || {}, "settingsSyncStatusPanel");
   }
@@ -1327,18 +1321,6 @@ function renderDashboard() {
   );
   renderDebug(planPayload || state.activitiesDashboard || {}, state.currentForecast);
   updateReviewToolState({ state, el });
-  
-  // Render erweiterte Metriken für primäre Aktivität
-  const activities = planPayload?.today?.activities || planPayload?.detail?.activities || [];
-  const primaryActivity = primaryActivityForActivities(activities);
-  if (primaryActivity) {
-    // User-Profil laden (falls vorhanden)
-    const userProfile = state.appState?.userProfile || null;
-    renderAdvancedMetricsCard(primaryActivity, userProfile);
-  }
-  
-  // Render erweiterte Metriken Zusammenfassung
-  renderAdvancedMetricsSummary(activities, state.appState?.userProfile || null);
 }
 
 async function refreshSyncStatus({ reloadDashboardOnTerminal = false } = {}) {
@@ -2071,127 +2053,4 @@ function renderActivitiesReviewStatus(payload) {
     </div>
   `;
 }
-// User Profile Management
-async function loadUserProfile() {
-  try {
-    const response = await apiGet("/api/user-profile/");
-    return response.profile || null;
-  } catch (error) {
-    console.warn("Failed to load user profile:", error);
-    return null;
-  }
-}
-
-async function saveUserProfile(profileData) {
-  try {
-    const response = await apiPost("/api/user-profile/", profileData);
-    showProfileFeedback("Profile saved successfully!", "success");
-    
-    // Aktualisiere App-State mit neuem Profil
-    if (state.appState) {
-      state.appState.userProfile = response.profile;
-    }
-    
-    // Dashboard neu laden um Metriken zu aktualisieren
-    if (state.appView === "dashboard") {
-      await loadDashboard({ skipAutoSync: true });
-    }
-    
-    return response.profile;
-  } catch (error) {
-    showProfileFeedback(`Failed to save profile: ${error.message}`, "error");
-    throw error;
-  }
-}
-
-async function deleteUserProfile() {
-  try {
-    await apiPost("/api/user-profile/", null);
-    showProfileFeedback("Profile deleted.", "info");
-    
-    // Aktualisiere App-State
-    if (state.appState) {
-      state.appState.userProfile = null;
-    }
-    
-    // Dashboard neu laden
-    if (state.appView === "dashboard") {
-      await loadDashboard({ skipAutoSync: true });
-    }
-  } catch (error) {
-    showProfileFeedback(`Failed to delete profile: ${error.message}`, "error");
-    throw error;
-  }
-}
-
-async function estimateUserMetrics() {
-  try {
-    showProfileFeedback("Estimating metrics from history...", "info");
-    const response = await apiPost("/api/user-profile/estimate-metrics", {});
-    
-    if (response.estimated && Object.keys(response.estimated).length > 0) {
-      showEstimationResults(response.estimated, async (estimated) => {
-        // Aktuelle Form-Daten lesen
-        const currentProfile = state.appState?.userProfile || {};
-        
-        // Geschätzte Werte zusammenführen
-        const mergedProfile = {
-          ...currentProfile,
-          ...estimated
-        };
-        
-        // Profil speichern
-        await saveUserProfile(mergedProfile);
-        
-        // Formular neu rendern
-        renderUserProfileForm(
-          mergedProfile,
-          saveUserProfile,
-          estimateUserMetrics
-        );
-        
-        showProfileFeedback("Estimated metrics applied!", "success");
-      });
-    } else {
-      showProfileFeedback("No metrics could be estimated. Need more activity history.", "info");
-    }
-  } catch (error) {
-    showProfileFeedback(`Estimation failed: ${error.message}`, "error");
-  }
-}
-
-async function renderUserProfileSection() {
-  const container = el("userProfileForm");
-  if (!container) {
-    return;
-  }
-  
-  // Lade aktuelles Profil
-  const userProfile = await loadUserProfile();
-  
-  // Speichere im App-State
-  if (state.appState) {
-    state.appState.userProfile = userProfile;
-  }
-  
-  // Render Formular
-  renderUserProfileForm(
-    userProfile,
-    async (data, isDelete = false) => {
-      if (isDelete) {
-        await deleteUserProfile();
-        renderUserProfileForm(null, saveUserProfile, estimateUserMetrics);
-      } else {
-        await saveUserProfile(data);
-        renderUserProfileForm(
-          state.appState?.userProfile,
-          saveUserProfile,
-          estimateUserMetrics
-        );
-      }
-    },
-    estimateUserMetrics
-  );
-}
-
 void bootstrapApplication();
