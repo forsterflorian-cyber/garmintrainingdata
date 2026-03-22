@@ -63,7 +63,7 @@ export function computeNextDaysOutlook({
       loadTolerance: context.loadTolerance,
       intensity: intensityOverride ? applyIntensityTrace(context.intensity, intensityOverride) : context.intensity,
     });
-    const defaultSession = chooseRepresentativeSession(decision);
+    const defaultSession = chooseRepresentativeSession(decision, mode);
     const recommendation = outlookRecommendationForDecision(decision, defaultSession?.category);
     const label = forecastDayLabel(initialState.anchorDate, dayIndex + 1);
     const row = {
@@ -174,10 +174,30 @@ function resolveSessionProfile(selectedSession) {
   return forecastProfileForSessionType(selectedSession.type) || forecastProfileForSessionType(selectedSession.id);
 }
 
-function chooseRepresentativeSession(decision) {
-  const preferredType = decision?.bestOptions?.[0]?.type;
-  if (preferredType) {
-    return resolveSessionProfile(preferredType);
+function chooseRepresentativeSession(decision, mode = "hybrid") {
+  const bestOptions = decision?.bestOptions || [];
+  
+  // Filtere Optionen nach Modus
+  const modeFilteredOptions = bestOptions.filter((option) => {
+    if (!option?.type) return false;
+    const session = getSession(option.type);
+    if (!session) return false;
+    
+    // Bei "hybrid" alle Optionen erlauben
+    if (mode === "hybrid") return true;
+    
+    // Bei spezifischem Modus nur passende Sportarten
+    return session.sportTag === mode || session.sportTag === "hybrid";
+  });
+
+  // Verwende gefilterte Optionen oder Fallback auf alle
+  const optionsToUse = modeFilteredOptions.length > 0 ? modeFilteredOptions : bestOptions;
+  
+  if (optionsToUse.length > 0) {
+    // Wähle zufällig aus den passenden Optionen für mehr Vielfalt
+    const randomIndex = Math.floor(Math.random() * Math.min(optionsToUse.length, 3));
+    const selectedOption = optionsToUse[randomIndex];
+    return resolveSessionProfile(selectedOption.type);
   }
 
   const fallbackCategory = categoryFromPrimaryRecommendation(decision?.primaryRecommendation, decision?.intensityPermission);
