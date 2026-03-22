@@ -2241,12 +2241,17 @@ async function loadUserProfile() {
 }
 
 // Load profile when settings view is activated
+function loadProfileOnSettingsView() {
+  if (state.appView === "settings") {
+    loadUserProfile();
+  }
+}
+
+// Override activateAppView to load profile when settings view is shown
 const originalActivateAppView = activateAppView;
 activateAppView = async function(view, options = {}) {
   await originalActivateAppView(view, options);
-  if (view === "settings") {
-    await loadUserProfile();
-  }
+  loadProfileOnSettingsView();
 };
 
 void bootstrapApplication();
