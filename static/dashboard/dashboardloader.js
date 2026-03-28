@@ -16,7 +16,7 @@ function dashboardUrlForDate({ mode, rangeDays, date = null }) {
   return `/api/dashboard?${params.toString()}`;
 }
 
-function resolveActivitiesDate(currentActivitiesDate, planPayload) {
+function resolveActivitiesDate(currentActivitiesDate, planPayload, manuallySelected) {
   const availableDays = historyRowsFromPayload(planPayload)
     .map((row) => (typeof row?.date === "string" && row.date ? row.date : null))
     .filter(Boolean);
@@ -26,7 +26,7 @@ function resolveActivitiesDate(currentActivitiesDate, planPayload) {
     planPayload?.detail?.activeDate ||
     null;
 
-  if (currentActivitiesDate && availableDays.includes(currentActivitiesDate)) {
+  if (manuallySelected && currentActivitiesDate && availableDays.includes(currentActivitiesDate)) {
     return currentActivitiesDate;
   }
 
@@ -68,7 +68,7 @@ export async function loadDashboardData({
     }
 
     const resolvedTodayDate = planPayload?.date || state.todayDate || null;
-    const resolvedActivitiesDate = resolveActivitiesDate(state.activitiesDate, planPayload);
+    const resolvedActivitiesDate = resolveActivitiesDate(state.activitiesDate, planPayload, state.activitiesDateManuallySelected);
 
     let activitiesPayload = planPayload;
 

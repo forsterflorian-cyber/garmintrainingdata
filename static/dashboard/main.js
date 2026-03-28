@@ -156,6 +156,7 @@ const state = {
   activitiesDashboard: null,
   todayDate: null,
   activitiesDate: null,
+  activitiesDateManuallySelected: false,
   actualSessionForPlanDate: null,
   selectedPreviewSession: null,
   forecastInputMode: "preview",
@@ -1013,6 +1014,7 @@ function setActivitiesDay(date) {
   if (!date || date === state.activitiesDate) {
     return;
   }
+  state.activitiesDateManuallySelected = date !== state.todayDate;
   state.activitiesDate = date;
   void loadDashboard({ skipAutoSync: true });
 }
@@ -1536,6 +1538,7 @@ function setLoggedOutState({ authMessage = "Not signed in", garminMessage = "Sig
   state.activitiesDashboard = null;
   state.todayDate = null;
   state.activitiesDate = null;
+  state.activitiesDateManuallySelected = false;
   state.actualSessionForPlanDate = null;
   state.selectedPreviewSession = null;
   state.forecastInputMode = "preview";
